@@ -103,7 +103,6 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
   <div class="topbar">
     <h1>NBA Forescore <span>tracker</span></h1>
     <div class="right">
-      <div class="seg" id="src"><button data-v="vivo">En vivo</button><button data-v="backtest">Backtest 2026-27</button></div>
       <button class="btn" id="theme" title="Cambiar tema claro/oscuro"></button>
     </div>
     <div class="meta" id="meta"></div>
@@ -111,6 +110,7 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
   <div class="metrics" id="metrics"></div>
   <nav class="tabs" id="tabs"></nav>
   <section id="t-partidos"></section>
+  <section id="t-registro"></section>
   <section id="t-tendencias"></section>
   <section id="t-mercados"></section>
   <section id="t-calib"></section>
@@ -152,16 +152,15 @@ setTheme(localStorage.getItem('nba_theme') || (matchMedia('(prefers-color-scheme
 $('#theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 
 // ---------- fuente (en vivo / backtest)
-let SRC = localStorage.getItem('nba_src') || ((D.partidos || []).some(g => g.selecciones.some(s => s.hit != null)) ? 'vivo' : 'backtest');
-const games = () => (SRC === 'vivo' ? D.partidos : D.partidos_bt) || [];
+// Solo partidos ANALIZADOS (predict.py). El backtest aparece únicamente como referencia en Calibración.
+const games = () => D.partidos || [];
 const sels = (gs = games()) => gs.flatMap(g => g.selecciones.map(s => ({ ...s, g, grupo: mercadoGrupo(s, g) }))).filter(s => !s.g.tardia);
-$('#src').onclick = e => { if (!e.target.dataset.v) return; SRC = e.target.dataset.v; localStorage.setItem('nba_src', SRC); renderAll(); };
 
 const m = D.meta || {};
 $('#meta').innerHTML = `Actualizado ${esc(m.generado)} · base ${Object.entries(m.partidos_base || {}).map(([s, n]) => `${s - 1}-${String(s).slice(2)}: ${n}`).join(' · ')} partidos · calibración ${esc((m.calib || []).join(', '))} · SD margen ${num(m.sd_margen)} · SD total ${num(m.sd_total)} · decisión por P% (EV y CLV son variables de estudio)`;
 
 // ---------- pestañas
-const TABS = [['partidos', 'Partidos'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
+const TABS = [['partidos', 'Partidos'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
   ['estudio', 'Estudio EV / CLV'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas'], ['equipos', 'Por equipo'], ['datos', 'Datos']];
 $('#tabs').innerHTML = TABS.map(([k, t]) => `<button data-k="${k}">${t}</button>`).join('');
 const showTab = k => { document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
@@ -181,13 +180,15 @@ function stats(ss) {
 function renderMetrics() {
   const gs = games(), ss = sels(gs), s = stats(ss), dif = s.acierto != null ? s.acierto - s.p : null, c = D.clv || {};
   const M = (lbl, val, cls = '', sub = '') => `<div class="metric"><div class="lbl">${lbl}</div><div class="val ${cls}">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const R = D.registro || {};
   $('#metrics').innerHTML = [
-    M('Partidos', gs.length, '', SRC === 'vivo' ? 'en vivo' : 'backtest 2026-27'),
-    M('Selecciones', s.n), M('Liquidadas', s.done), M('Pendientes', s.pend, s.pend ? 'warn' : ''),
-    M('Acierto', pct(s.acierto)), M('P media', pct(s.p), '', 'lo prometido'),
+    M('Partidos', gs.length, '', 'analizados'),
+    M('Cuotas registradas', R.total ?? 0, '', `${R.con_p ?? 0} con P del modelo`),
+    M('Cuotas liquidadas', R.liquidadas ?? 0),
+    M('Selecciones', s.n, '', 'lado más probable por mercado'), M('Pendientes', s.pend, s.pend ? 'warn' : ''),
+    M('Acierto', pct(s.acierto), '', 'selecciones'), M('P media', pct(s.p), '', 'lo prometido'),
     M('Calibración', dif == null ? '—' : sgn(100 * dif) + ' pp', dif == null ? '' : Math.abs(dif) <= .03 ? 'good' : 'warn', 'acierto − P media'),
     M('Brier', num(s.brier, 3), '', 'menor = mejor'),
-    M('P&L teórico', s.done ? sgn(s.pl, 2) + 'u' : '—', s.pl >= 0 ? 'good' : 'bad', 'informativo · 1u'),
     M('CLV pre-salto', c.clv_pre_main == null ? '—' : sgn(100 * c.clv_pre_main) + '%', '', `${c.cierre_real ?? 0}/${c.partidos ?? 0} con cierre real`),
   ].join('');
 }
@@ -208,7 +209,7 @@ function renderPartidos() {
     <div class="tablewrap scroll"><table><thead><tr><th class="l"></th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th>
     <th>P local</th><th>Línea justa</th><th>Margen esp. → real</th><th>Total esp. → real</th><th class="l">Selecciones</th><th></th></tr></thead><tbody id="pt-body"></tbody></table></div>
     <p class="note">Una fila por partido; clic para ver el detalle. P local = probabilidad final (mercado sin margen + modelo). Margen y total: lo esperado antes del salto → lo que pasó.
-    ${SRC === 'backtest' ? 'Fuente backtest: predicciones walk-forward con líneas de cierre (sin fotos de Betano ni bajas por nombre).' : ''}</p>`;
+    Solo aparecen partidos analizados (predict.py); el detalle incluye todas las cuotas registradas.</p>`;
   const bind = (id, k, ev = 'onchange') => { $(id)[ev] = e => { st[k] = e.target.value; drawRows(); }; };
   bind('#pf-fecha', 'fecha'); bind('#pf-merc', 'mercado'); bind('#pf-tramo', 'tramo'); bind('#pf-est', 'estado'); bind('#pf-eq', 'equipo', 'oninput');
   $('#pf-clear').onclick = () => { Object.assign(st, { fecha: '', mercado: '', tramo: '', estado: '', equipo: '' }); renderPartidos(); };
@@ -231,7 +232,7 @@ function renderPartidos() {
         <td class="l">${ok ? `<span class="badge ok">${ok} ✓</span> ` : ''}${ko ? `<span class="badge ko">${ko} ✗</span> ` : ''}${pend ? `<span class="badge pd">${pend} pend.</span>` : ''}</td>
         <td>${(g.avisos || []).length ? `<span data-tip="${esc(g.avisos.join('<br>'))}">⚠</span>` : ''}</td></tr>`;
       return row + (open ? `<tr class="detail"><td colspan="10">${detail(g)}</td></tr>` : '');
-    }).join('') || `<tr><td colspan="10" class="empty">Sin partidos con estos filtros${SRC === 'vivo' ? ' (en vivo el historial empieza el 2026-11-17)' : ''}.</td></tr>`;
+    }).join('') || `<tr><td colspan="10" class="empty">Sin partidos con estos filtros (el historial empieza el 2026-11-17).</td></tr>`;
     document.querySelectorAll('tr.game').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; st.open.has(id) ? st.open.delete(id) : st.open.add(id); drawRows(); });
   }
 }
@@ -249,7 +250,20 @@ function detail(g) {
       <span>Total IC 80 %</span><span>${num(e.ic80?.[0], 0)}–${num(e.ic80?.[1], 0)}${r ? ` <span class="muted">(real ${r.total})</span>` : ''}</span>
       <span>Descanso ${esc(g.home)}</span><span>${rest(g.descanso?.home)}</span><span>Descanso ${esc(g.away)}</span><span>${rest(g.descanso?.away)}</span>
       <span>Bajas ${esc(g.home)}</span><span>${bajas('home')}</span><span>Bajas ${esc(g.away)}</span><span>${bajas('away')}</span>
-      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>`;
+      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>${regTable(g)}`;
+}
+const SIDE = (g, side) => ({ home: g.home, away: g.away, over: 'Más', under: 'Menos', draw: 'Empate', yes: 'Sí', no: 'No' }[side] ?? side);
+function regTable(g) {
+  if (!g.registro) return g.n_registro ? `<p class="note">${g.n_registro} cuotas registradas (detalle solo de los últimos 7 días; el agregado está en la pestaña Registro).</p>` : '';
+  if (!g.registro.length) return '<p class="note">Sin cuotas registradas para este partido.</p>';
+  const rows = g.registro.map(([gr, subj, side, line, price, pm, pk, hit]) => {
+    const who = subj === 'home' ? g.home : subj === 'away' ? g.away : subj === 'game' ? '' : subj;
+    const d = pm != null && pk != null ? pm - pk : null;
+    return `<tr><td class="l">${esc(gr)}</td><td class="l">${esc(who)}</td><td class="l">${esc(SIDE(g, side))}${line != null ? ' ' + (gr.startsWith('Hándicap') ? sgn(line) : line) : ''}</td>
+      <td>${num(price, 2)}</td><td>${pct(pm)}</td><td>${pct(pk)}</td><td class="${d > .03 ? 'hit1' : d < -.03 ? 'hit0' : 'muted'}">${d == null ? '—' : sgn(100 * d) + ' pp'}</td>
+      <td>${hit === 1 ? '<span class="badge ok">✓</span>' : hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="muted">·</span>'}</td></tr>`; }).join('');
+  return `<details style="margin-top:12px"><summary class="small" style="cursor:pointer">Todas las cuotas registradas (${g.registro.length}) — P del modelo vs P del mercado</summary>
+    <div class="tablewrap" style="max-height:340px;margin-top:6px"><table><thead><tr><th class="l">Mercado</th><th class="l">Equipo / jugador</th><th class="l">Selección</th><th>Cuota</th><th>P modelo</th><th>P mercado</th><th>Dif.</th><th>Res.</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
 // ---------- gráfico de líneas (un eje) con puntos con tooltip
@@ -275,6 +289,43 @@ function lineChart(series, { yfmt = v => v, ylab = '', zero = false, h = 260 } =
     const tt = series.map(se => { const q = se.pts[i]; return q ? `${esc(se.name)}: <b>${yfmt(q.y)}</b>` : ''; }).join('<br>');
     s += `<rect x="${xa}" y="${T}" width="${Math.max(1, xb - xa)}" height="${H - T - B}" fill="transparent" data-tip="<b>${esc(p.lbl || '')}</b>${p.extra ? ' · ' + esc(p.extra) : ''}<br>${tt}"/>`; });
   return s + '</svg>';
+}
+
+// ---------- REGISTRO (todas las cuotas, tipo d2)
+function calib01(series) {
+  const W = 620, H = 360, L = 50, R = 16, T = 14, B = 42, sx = v => L + v * (W - L - R), sy = v => T + (1 - v) * (H - T - B);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px" role="img" aria-label="Calibración por decil">`;
+  for (let v = 0; v <= 1.001; v += .2) s += `<line class="gridl" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text><text x="${sx(v)}" y="${H - B + 16}" text-anchor="middle">${Math.round(v * 100)}%</text>`;
+  s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">P (media del decil) · eje vertical: acierto real</text><line x1="${sx(0)}" y1="${sy(0)}" x2="${sx(1)}" y2="${sy(1)}" stroke="var(--ref)" stroke-dasharray="4 4" stroke-width="1.5"/>`;
+  series.forEach(se => { const pts = se.rows; if (pts.length > 1) s += `<polyline fill="none" stroke="${se.c}" stroke-width="2" points="${pts.map(r => sx(r.p_media) + ',' + sy(r.acierto)).join(' ')}"/>`;
+    pts.forEach(r => { const t = `<b>${esc(se.name)}</b> · decil ${esc(r.decil)}<br>P media ${pct(r.p_media)} · acierto ${pct(r.acierto)}<br>n = ${r.n}`;
+      s += `<circle cx="${sx(r.p_media)}" cy="${sy(r.acierto)}" r="${Math.max(4, Math.min(9, Math.sqrt(r.n) / 2.2))}" fill="${se.c}" stroke="var(--surface-1)" stroke-width="2"/><circle cx="${sx(r.p_media)}" cy="${sy(r.acierto)}" r="14" fill="transparent" data-tip="${t}"/>`; }); });
+  return s + '</svg>';
+}
+let regGrupo = '(todas)';
+function renderRegistro() {
+  const R = D.registro || {}, el = $('#t-registro');
+  if (!R.total) { el.innerHTML = '<div class="empty">Todavía no hay cuotas registradas: se llenan al analizar partidos con una foto de Betano.</div>'; return; }
+  const gr = (R.grupos || []).slice().sort((a, b) => b.n - a.n);
+  const dec = (R.deciles || []).filter(d => d.grupo === regGrupo);
+  const ser = [{ name: 'P del modelo', c: 'var(--series-1)', rows: dec.filter(d => d.fuente_p === 'modelo') },
+               { name: 'P del mercado (sin margen)', c: 'var(--series-2)', rows: dec.filter(d => d.fuente_p === 'mercado') }];
+  const DEC = ['0-10', '10-20', '20-30', '30-40', '40-50', '50-60', '60-70', '70-80', '80-90', '90-100'];
+  el.innerHTML = `<p class="note" style="margin-bottom:12px">Como el d2 de ForescoreClubes: <b>todas</b> las cuotas que publica Betano para cada partido analizado (las dos caras de cada mercado, todas las líneas alternativas, 1er tiempo, prórroga y escaleras de jugador), con la P del modelo, la P del mercado sin margen y el resultado. Nada se descarta: sirve para medir dónde la P del modelo es honesta y dónde no.
+    Las escaleras de jugador se registran sin P del modelo (todavía no hay modelo de props): se mide solo su P de mercado.</p>
+    <div class="card"><div class="card-title">Por mercado — ${R.total} cuotas · ${R.con_p} con P del modelo · ${R.liquidadas} liquidadas</div>
+      <div class="tablewrap"><table><thead><tr><th class="l">Mercado</th><th>Cuotas</th><th>Con P modelo</th><th>Liquidadas</th><th>Acierto</th><th>P modelo</th><th>P mercado</th><th>Brier modelo</th><th>Brier mercado</th><th>Mejor</th></tr></thead><tbody>
+      ${gr.map(r => { const b = r.brier_modelo != null && r.brier_mercado != null ? (r.brier_modelo < r.brier_mercado ? 'modelo' : 'mercado') : '—';
+        return `<tr><td class="l">${esc(r.grupo)}</td><td>${r.n}</td><td>${r.con_p}</td><td>${r.liquidadas}</td><td>${pct(r.acierto)}</td><td>${pct(r.p_modelo)}</td><td>${pct(r.p_mercado)}</td><td>${num(r.brier_modelo, 3)}</td><td>${num(r.brier_mercado, 3)}</td><td class="${b === 'modelo' ? 'hit1' : ''}">${b}</td></tr>`; }).join('')}
+      </tbody></table></div><p class="note">P modelo / P mercado = medias sobre las cuotas liquidadas que tienen ambas. Brier menor = mejor. Con pocas cuotas liquidadas, "Mejor" no concluye nada.</p></div>
+    <div class="card"><div class="card-title">Calibración por decil de P</div>
+      <div class="filters">Mercado: <select id="reg-g"><option>(todas)</option>${gr.map(r => `<option ${r.grupo === regGrupo ? 'selected' : ''}>${esc(r.grupo)}</option>`).join('')}</select></div>
+      <div class="legend">${ser.map(x => `<span><i style="background:${x.c}"></i>${x.name}</span>`).join('')}<span><i class="dash"></i>calibración perfecta</span></div>
+      ${dec.length ? calib01(ser) : '<div class="empty">Sin cuotas liquidadas en este mercado todavía.</div>'}
+      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="l">Decil</th><th>n (modelo)</th><th>P modelo</th><th>Acierto</th><th>n (mercado)</th><th>P mercado</th><th>Acierto</th></tr></thead><tbody>
+      ${DEC.map(b => { const x = dec.find(d => d.decil === b && d.fuente_p === 'modelo'), k = dec.find(d => d.decil === b && d.fuente_p === 'mercado');
+        return x || k ? `<tr><td class="l">${b} %</td><td>${x?.n ?? '—'}</td><td>${pct(x?.p_media)}</td><td>${pct(x?.acierto)}</td><td>${k?.n ?? '—'}</td><td>${pct(k?.p_media)}</td><td>${pct(k?.acierto)}</td></tr>` : ''; }).join('')}</tbody></table></div></div>`;
+  $('#reg-g').onchange = e => { regGrupo = e.target.value; renderRegistro(); };
 }
 
 // ---------- TENDENCIAS
@@ -352,7 +403,7 @@ function renderCalib() {
   const bt = D.backtest || {}, ss = sels().filter(s => !calibMk || s.grupo === calibMk);
   const series = [{ name: 'Backtest 2024-26 (ganador)', c: 'var(--series-1)', rows: bt.calibracion?.tabla || [] },
     { name: 'Backtest 2026-27 (ganador)', c: 'var(--series-2)', rows: bt.prueba?.tabla || [] },
-    { name: `${SRC === 'vivo' ? 'En vivo' : 'Fuente backtest'} · ${calibMk || 'todos los mercados'}`, c: 'var(--series-3)', rows: bandRows(ss) }];
+    { name: `Analizados · ${calibMk || 'todos los mercados'}`, c: 'var(--series-3)', rows: bandRows(ss) }];
   const ll = k => bt[k] ? `<tr><td class="l">${k === 'calibracion' ? 'Calibración 2024-26' : 'Prueba 2026-27'}</td><td>${bt[k].n}</td><td>${num(bt[k].logloss.mercado, 4)}</td><td>${num(bt[k].logloss.modelo, 4)}</td><td>${num(bt[k].logloss.mezcla, 4)}</td><td>${num(bt[k].brier.mercado, 4)}</td><td>${num(bt[k].brier.modelo, 4)}</td><td>${num(bt[k].brier.mezcla, 4)}</td></tr>` : '';
   $('#t-calib').innerHTML = `<div class="card"><div class="card-title">P% prometida vs acierto real</div>
     <div class="filters">Serie verde: <select id="cal-mk"><option value="">Todos los mercados</option>${MERCADOS.map(x => `<option ${x === calibMk ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
@@ -431,7 +482,7 @@ function renderEquipos() {
   const H = (key, txt, cls = '') => `<th class="sort ${cls}" data-k="${key}">${txt}${eqSort[0] === key ? (eqSort[1] > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const bar = (v, sc) => `<span style="display:inline-block;width:60px;height:8px;position:relative;vertical-align:middle;margin-right:6px;background:var(--surface-2);border-radius:4px">
     <span style="position:absolute;top:0;height:8px;border-radius:3px;${v >= 0 ? 'left:30px' : 'right:30px'};width:${Math.min(30, Math.abs(v) / sc * 30)}px;background:var(${v >= 0 ? '--div-pos' : '--div-neg'})"></span></span>`;
-  $('#t-equipos').innerHTML = `<div class="card"><div class="card-title">¿Con quién falla el modelo? (${SRC === 'vivo' ? 'en vivo' : 'backtest 2026-27'})</div>
+  $('#t-equipos').innerHTML = `<div class="card"><div class="card-title">¿Con quién falla el modelo? (partidos analizados)</div>
     <div class="tablewrap scroll"><table><thead><tr>${H('eq', 'Equipo', 'l')}${H('n', 'Partidos')}${H('sesgo', 'Rinde vs esperado (margen)')}${H('mae', 'Error medio |margen|')}${H('sesgo_t', 'Total real − esperado')}${H('npick', 'Veces favorito')}${H('p', 'P media')}${H('acierto', 'Acierto como favorito')}</tr></thead><tbody>
     ${rows.map(r => `<tr><td class="l"><b>${esc(r.eq)}</b></td><td>${r.n}</td><td>${bar(r.sesgo, 8)}${sgn(r.sesgo)} pts</td><td>${num(r.mae)}</td><td>${bar(r.sesgo_t, 12)}${sgn(r.sesgo_t)}</td><td>${r.npick}</td><td>${pct(r.p)}</td><td>${pct(r.acierto)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin partidos liquidados.</td></tr>'}
     </tbody></table></div><p class="note">"Rinde vs esperado" desde el punto de vista del equipo: positivo = ganó por más (o perdió por menos) de lo que esperaba el sistema. Con menos de ~15 partidos por equipo es ruido; sirve para detectar equipos donde el modelo falla de forma repetida (lesiones largas, cambios de plantilla).</p></div>`;
@@ -454,8 +505,7 @@ function renderDatos() {
 }
 
 function renderAll() {
-  document.querySelectorAll('#src button').forEach(b => b.classList.toggle('on', b.dataset.v === SRC));
-  renderMetrics(); renderPartidos(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
+  renderMetrics(); renderPartidos(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
 }
 renderAll();
 showTab((location.hash || '#partidos').slice(1));
