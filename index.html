@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NBA Forescore — tracker</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f4f3f0; --surface-1: #fcfcfb; --surface-2: #f0efec; --border: #dddcd6;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7973;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --div-pos: #2a78d6; --div-neg: #e34948; --div-mid: #f0efec;
+  --good: #006300; --bad: #b42d2d; --grid: #e6e5e0; --ref: #a9a8a2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #121211; --surface-1: #1a1a19; --surface-2: #252523; --border: #383835;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --div-pos: #3987e5; --div-neg: #e66767; --div-mid: #383835;
+    --good: #3fbf3f; --bad: #ee7b7b; --grid: #2c2c2a; --ref: #66655f;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #121211; --surface-1: #1a1a19; --surface-2: #252523; --border: #383835;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --div-pos: #3987e5; --div-neg: #e66767; --div-mid: #383835;
+  --good: #3fbf3f; --bad: #ee7b7b; --grid: #2c2c2a; --ref: #66655f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary); min-height: 100vh;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 18px 24px 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; }
+header h1 { font-size: 20px; margin: 0; }
+header .meta { color: var(--text-secondary); font-size: 12.5px; }
+nav { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-secondary);
+  padding: 10px 12px; font: inherit; cursor: pointer; }
+nav button.on { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+main { padding: 18px 24px 40px; max-width: 1280px; }
+section { display: none; } section.on { display: block; }
+.note { color: var(--text-secondary); font-size: 13px; max-width: 900px; margin: 0 0 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.card h3 { margin: 0 0 2px; font-size: 15px; } .card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--text-secondary); }
+.chip { display: inline-block; min-width: 46px; text-align: center; border: 1px solid var(--border); border-radius: 10px;
+  padding: 0 6px; font-size: 11.5px; color: var(--text-secondary); background: var(--surface-2); }
+.warn { color: var(--bad); font-size: 12.5px; margin-top: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--surface-1); }
+th, td { padding: 5px 8px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 600; background: var(--surface-2); position: sticky; top: 0; }
+td.l, th.l { text-align: left; }
+.tablewrap { overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: 8px; }
+.hit1 { color: var(--good); font-weight: 600; } .hit0 { color: var(--bad); font-weight: 600; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; align-items: center; }
+.filters select { font: inherit; padding: 4px 6px; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 6px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+svg text { fill: var(--text-secondary); font-size: 11px; }
+svg .axis { stroke: var(--border); } svg .gridl { stroke: var(--grid); }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px #0003;
+  display: none; z-index: 9; max-width: 260px; }
+h2 { font-size: 16px; margin: 22px 0 6px; }
+.pbar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: flex; gap: 2px; margin: 4px 0 2px; }
+.pbar div { height: 100%; }
+.small { font-size: 12px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<header>
+  <h1>NBA Forescore — tracker</h1>
+  <div class="meta" id="meta"></div>
+</header>
+<nav id="tabs"></nav>
+<main>
+  <section id="s-hoy"></section>
+  <section id="s-hist"></section>
+  <section id="s-calib"></section>
+  <section id="s-clv"></section>
+  <section id="s-crit"></section>
+</main>
+<div id="tip"></div>
+</div>
+<script src="data.js"></script>
+<script>
+const D = window.NBA || {};
+const $ = s => document.querySelector(s);
+const pct = (x, d = 1) => x == null ? '—' : (100 * x).toFixed(d) + '%';
+const num = (x, d = 1) => x == null ? '—' : (+x).toFixed(d);
+const sgn = (x, d = 1) => x == null ? '—' : (x > 0 ? '+' : '') + (+x).toFixed(d);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tip = $('#tip');
+document.addEventListener('mousemove', e => {
+  const t = e.target.closest('[data-tip]');
+  if (!t) { tip.style.display = 'none'; return; }
+  tip.innerHTML = t.dataset.tip; tip.style.display = 'block';
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8), y = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8);
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+
+// --- encabezado y pestañas
+const m = D.meta || {};
+$('#meta').innerHTML = `Actualizado ${esc(m.generado)} · base: ${Object.entries(m.partidos_base || {}).map(([s, n]) => `${s - 1}-${String(s).slice(2)}: ${n}`).join(' · ')} partidos · calibración ${esc((m.calib || []).join(', '))} · SD margen ${num(m.sd_margen)} / total ${num(m.sd_total)}`;
+const TABS = [['hoy', 'Hoy'], ['hist', 'Historial'], ['calib', 'Calibración por P%'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas']];
+$('#tabs').innerHTML = TABS.map(([k, t]) => `<button data-k="${k}">${t}</button>`).join('');
+const show = k => { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === 's-' + k)); location.hash = k; };
+$('#tabs').onclick = e => e.target.dataset.k && show(e.target.dataset.k);
+
+// --- HOY
+(() => {
+  const g = D.hoy || [];
+  const el = $('#s-hoy');
+  if (!g.length) { el.innerHTML = '<p class="note">Sin predicciones registradas.</p>'; return; }
+  const restTxt = r => r ? `${r.days_rest == null ? '?' : r.days_rest} d${r.b2b === 1 ? ' · B2B' : ''}${(r.g_4d || 0) >= 3 ? ' · 3 en 4' : ''}${r.travel_km ? ' · ' + Math.round(r.travel_km) + ' km' : ''}` : '—';
+  el.innerHTML = `<p class="note">Predicciones del ${esc(m.dia)}. La decisión es por <b>P%</b> (tramo); el EV se muestra solo como información
+    (todavía no se demostró que separe aciertos). Horas en Lima.</p><div class="grid">` + g.map(x => {
+    const ph = x.p_home, t = new Date(x.start_utc).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' });
+    const sel = (x.selecciones || []).map(s => `<tr><td class="l">${esc(s.mercado)}</td><td class="l">${esc(s.seleccion)}</td>
+      <td><span class="chip">${esc(s.tramo)}</span></td><td>${pct(s.p)}</td><td>${s.cuota ? num(s.cuota, 2) : '—'}</td>
+      <td class="small">${s.ev_info == null ? '' : sgn(100 * s.ev_info) + '%'}</td></tr>`).join('');
+    return `<div class="card"><h3>${esc(x.partido)}${x.marcador ? ` <span class="small">final ${esc(x.marcador)}</span>` : ''}</h3>
+      <div class="sub">${t} · cuotas: ${esc(x.fuente_cuotas || '—')}</div>
+      <div class="pbar" data-tip="${esc(x.away)} ${pct(1 - ph)} · ${esc(x.home)} ${pct(ph)}<br>mercado ${pct(x.p_mkt)} · modelo ${pct(x.p_model)}">
+        <div style="width:${100 * (1 - ph)}%;background:var(--series-2)"></div><div style="width:${100 * ph}%;background:var(--series-1)"></div></div>
+      <div class="legend"><span><i style="background:var(--series-2)"></i>${esc(x.away)} ${pct(1 - ph)}</span><span><i style="background:var(--series-1)"></i>${esc(x.home)} ${pct(ph)}</span></div>
+      <div class="kv"><span>Línea justa local</span><span>${sgn(x.fair_spread_home)}</span>
+        <span>Total (IC 80 %)</span><span>${num(x.total)} (${num(x.ic80?.[0], 0)}–${num(x.ic80?.[1], 0)})</span>
+        <span>Puntos</span><span>${esc(x.home)} ${num(x.pts_home)} · ${esc(x.away)} ${num(x.pts_away)}</span>
+        <span>Descanso ${esc(x.home)}</span><span>${restTxt(x.rest?.home)}</span>
+        <span>Descanso ${esc(x.away)}</span><span>${restTxt(x.rest?.away)}</span>
+        <span>Bajas ${esc(x.home)}</span><span>${esc((x.bajas?.home || []).join(', ') || '—')}</span>
+        <span>Bajas ${esc(x.away)}</span><span>${esc((x.bajas?.away || []).join(', ') || '—')}</span></div>
+      <table style="margin-top:8px"><thead><tr><th class="l">Mercado</th><th class="l">Selección</th><th>Tramo</th><th>P</th><th>Cuota</th><th>EV info</th></tr></thead><tbody>${sel}</tbody></table>
+      ${(x.warns || []).map(w => `<div class="warn">⚠ ${esc(w)}</div>`).join('')}</div>`;
+  }).join('') + '</div>';
+})();
+
+// --- HISTORIAL
+(() => {
+  const h = (D.historial || []).slice().sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const el = $('#s-hist');
+  const opts = (k) => ['todos', ...new Set(h.map(r => r[k]))].map(v => `<option>${esc(v)}</option>`).join('');
+  el.innerHTML = `<p class="note">Cada selección registrada antes del salto (última predicción previa), con su tramo de P% y el resultado.
+    Las marcadas "tardía" se registraron después del inicio y no cuentan en la calibración.</p>
+    <div class="filters">Mercado <select id="f-m">${opts('mercado')}</select> Tramo <select id="f-t">${opts('tramo')}</select>
+    Resultado <select id="f-r"><option>todos</option><option>acierto</option><option>fallo</option><option>pendiente</option></select>
+    <span class="small" id="f-n"></span></div><div class="tablewrap"><table id="t-hist"></table></div>`;
+  const draw = () => {
+    const fm = $('#f-m').value, ft = $('#f-t').value, fr = $('#f-r').value;
+    const r = h.filter(x => (fm === 'todos' || x.mercado === fm) && (ft === 'todos' || x.tramo === ft) &&
+      (fr === 'todos' || (fr === 'acierto' && x.hit === 1) || (fr === 'fallo' && x.hit === 0) || (fr === 'pendiente' && x.hit == null)));
+    const done = r.filter(x => x.hit != null);
+    $('#f-n').textContent = `${r.length} selecciones · liquidadas ${done.length} · acierto ${done.length ? pct(done.reduce((a, x) => a + x.hit, 0) / done.length) : '—'} · P media ${done.length ? pct(done.reduce((a, x) => a + x.p, 0) / done.length) : '—'}`;
+    $('#t-hist').innerHTML = `<thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Mercado</th><th class="l">Selección</th><th>Tramo</th><th>P</th><th>Cuota</th><th>EV info</th><th>Final</th><th>Resultado</th></tr></thead><tbody>` +
+      r.map(x => `<tr><td class="l">${esc(x.fecha)}</td><td class="l">${esc(x.partido)}</td><td class="l">${esc(x.mercado)}</td><td class="l">${esc(x.seleccion)}</td>
+      <td><span class="chip">${esc(x.tramo)}</span></td><td>${pct(x.p)}</td><td>${x.cuota ? num(x.cuota, 2) : '—'}</td><td class="small">${x.ev_info == null ? '' : sgn(100 * x.ev_info) + '%'}</td>
+      <td>${esc(x.marcador || '')}</td><td class="${x.hit === 1 ? 'hit1' : x.hit === 0 ? 'hit0' : ''}">${x.hit === 1 ? '✓ acierto' : x.hit === 0 ? '✗ fallo' : 'pendiente'}${x.tardia ? ' · tardía' : ''}</td></tr>`).join('') + '</tbody>';
+  };
+  ['#f-m', '#f-t', '#f-r'].forEach(s => $(s).onchange = draw); draw();
+})();
+
+// --- gráfico de calibración (P prometida vs acierto) con hover
+function calibChart(series) {
+  const W = 560, H = 330, L = 48, R = 16, T = 14, B = 40, x0 = 0.5, x1 = 1;
+  const sx = v => L + (v - x0) / (x1 - x0) * (W - L - R), sy = v => T + (1 - (v - 0.4) / 0.6) * (H - T - B);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px" role="img" aria-label="Calibración: P prometida contra acierto real">`;
+  for (let v = 0.4; v <= 1.0001; v += 0.1) s += `<line class="gridl" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text>`;
+  for (let v = 0.5; v <= 1.0001; v += 0.1) s += `<text x="${sx(v)}" y="${H - B + 16}" text-anchor="middle">${Math.round(v * 100)}%</text>`;
+  s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">P% prometida (media del tramo)</text>`;
+  s += `<line x1="${sx(0.5)}" y1="${sy(0.5)}" x2="${sx(1)}" y2="${sy(1)}" stroke="var(--ref)" stroke-dasharray="4 4" stroke-width="1.5"/>`;
+  series.forEach(se => {
+    const pts = se.rows.filter(r => r.acierto != null);
+    if (pts.length > 1) s += `<polyline fill="none" stroke="var(${se.c})" stroke-width="2" points="${pts.map(r => sx(r.p_media) + ',' + sy(r.acierto)).join(' ')}"/>`;
+    pts.forEach(r => { const rad = Math.max(4, Math.min(9, Math.sqrt(r.n) / 2.2));
+      s += `<circle cx="${sx(r.p_media)}" cy="${sy(r.acierto)}" r="${rad}" fill="var(${se.c})" stroke="var(--surface-1)" stroke-width="2"
+        data-tip="<b>${esc(se.name)}</b> · tramo ${esc(r.tramo)}<br>P media ${pct(r.p_media)} · acierto ${pct(r.acierto)}<br>n = ${r.n}"/>
+        <circle cx="${sx(r.p_media)}" cy="${sy(r.acierto)}" r="14" fill="transparent" data-tip="<b>${esc(se.name)}</b> · tramo ${esc(r.tramo)}<br>P media ${pct(r.p_media)} · acierto ${pct(r.acierto)}<br>n = ${r.n}"/>`; });
+  });
+  return s + '</svg>';
+}
+function bandTable(rows, extra) {
+  return `<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Tramo</th><th>n</th><th>P media</th><th>Acierto</th>${extra ? `<th>n ${extra}>0</th><th>Acierto ${extra}>0</th><th>n ${extra}≤0</th><th>Acierto ${extra}≤0</th>` : ''}</tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="l">${esc(r.tramo)}</td><td>${r.n}</td><td>${pct(r.p_media)}</td><td>${pct(r.acierto)}</td>${extra ? `<td>${r.n_pos ?? '—'}</td><td>${pct(r.acierto_pos)}</td><td>${r.n_neg ?? '—'}</td><td>${pct(r.acierto_neg)}</td>` : ''}</tr>`).join('') + '</tbody></table></div>';
+}
+
+// --- CALIBRACIÓN
+(() => {
+  const bt = D.backtest || {}, el = $('#s-calib');
+  const series = [{ name: 'Backtest 2024-26 (calibración)', c: '--series-1', rows: bt.calibracion?.tabla || [] },
+                  { name: 'Backtest 2026-27 (prueba)', c: '--series-2', rows: bt.prueba?.tabla || [] },
+                  { name: 'En vivo (registradas)', c: '--series-3', rows: D.calibracion_vivo || [] }];
+  const ll = k => bt[k] ? `log-loss mercado ${num(bt[k].logloss.mercado, 4)} · modelo ${num(bt[k].logloss.modelo, 4)} · mezcla ${num(bt[k].logloss.mezcla, 4)} (n=${bt[k].n})` : '';
+  el.innerHTML = `<p class="note">Si la P% significa lo que dice, los puntos caen sobre la diagonal: el tramo de 70-75 % debería acertar ~72 %.
+    Ganador del partido, lado con P ≥ 50 %. El tamaño del punto crece con n; tramos con n &lt; 30 no permiten conclusiones.</p>
+    <div class="legend">${series.map(s => `<span><i style="background:var(${s.c})"></i>${esc(s.name)}</span>`).join('')}<span><i style="background:var(--ref)"></i>calibración perfecta</span></div>
+    ${calibChart(series)}
+    <p class="small">${ll('calibracion')}<br>${ll('prueba')}</p>
+    <h2>¿EV separa aciertos dentro de cada tramo? (en vivo)</h2>
+    <p class="note">Criterio: decidir por P%. El EV solo pasaría a filtrar si, dentro del mismo tramo, las selecciones con EV &gt; 0 aciertan claramente más que las de EV ≤ 0 con muestras grandes.</p>
+    ${(D.separadores_vivo || []).length ? bandTable(D.separadores_vivo, 'EV') : '<p class="small">Todavía no hay selecciones liquidadas.</p>'}
+    <h2>Tablas del backtest</h2><h3 class="small">Calibración 2024-26</h3>${bandTable(bt.calibracion?.tabla || [])}
+    <h3 class="small">Prueba 2026-27</h3>${bandTable(bt.prueba?.tabla || [])}`;
+})();
+
+// --- barras divergentes (para CLV y residuos)
+function divBars(rows, label, value, fmt, tipf, unit, dom) {
+  const W = 560, rowH = 24, L = 190, R = 60, H = rows.length * rowH + 30;
+  const mx = Math.max(dom || 1e-9, ...rows.map(r => Math.abs(value(r) || 0)));   // escala fija: un efecto chico se ve chico
+  const sx = v => L + (W - L - R) / 2 + v / mx * (W - L - R) / 2, z = sx(0);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px">`;
+  s += `<line class="axis" x1="${z}" x2="${z}" y1="6" y2="${H - 20}"/><text x="${z}" y="${H - 6}" text-anchor="middle">0</text>
+    <text x="${sx(-mx)}" y="${H - 6}" text-anchor="start">−${+mx.toFixed(1)} ${unit}</text><text x="${sx(mx)}" y="${H - 6}" text-anchor="end">+${+mx.toFixed(1)} ${unit}</text>`;
+  rows.forEach((r, i) => { const v = value(r) || 0, y = 10 + i * rowH, x = Math.min(z, sx(v)), w = Math.abs(sx(v) - z);
+    s += `<text x="${L - 8}" y="${y + 12}" text-anchor="end">${esc(label(r))}</text>
+      <rect x="${x}" y="${y + 3}" width="${Math.max(w, 1)}" height="14" rx="3" fill="var(${v >= 0 ? '--div-pos' : '--div-neg'})"/>
+      <rect x="${L}" y="${y}" width="${W - L - R}" height="${rowH}" fill="transparent" data-tip="${tipf(r)}"/>
+      <text x="${W - 6}" y="${y + 12}" text-anchor="end">${fmt(v)}</text>`; });
+  return s + '</svg>';
+}
+
+// --- CLV
+(() => {
+  const c = D.clv || {}, el = $('#s-clv'), rows = (c.por_mercado || []).filter(r => r.clv != null);
+  el.innerHTML = `<p class="note">CLV = cuota tomada × P justa del cierre − 1. Cierre = última foto de Betano antes del salto
+    (${c.cierre_real ?? 0} de ${c.partidos ?? 0} partidos tienen cierre real, foto ≤ 60 min antes). Si la línea no se mueve, el CLV ≈ −margen de Betano
+    (−2 a −5 % en líneas principales): eso es lo normal. CLV sostenido &gt; 0 en algún momento del día sería la primera señal de ventaja.</p>
+    <div class="legend"><span><i style="background:var(--div-pos)"></i>CLV positivo</span><span><i style="background:var(--div-neg)"></i>CLV negativo</span></div>
+    ${rows.length ? divBars(rows, r => `${r.grupo} · ${r.momento}`, r => 100 * r.clv, v => sgn(v) + '%',
+      r => `<b>${esc(r.grupo)}</b> · ${esc(r.momento)}<br>CLV medio ${sgn(100 * r.clv)}% · CLV&gt;0 ${pct(r.pos)}<br>vs DraftKings ${r.clv_dk == null ? '—' : sgn(100 * r.clv_dk) + '%'} · n = ${r.n}`, '%', 10) : '<p class="small">Sin CLV todavía.</p>'}
+    <h2>Tabla</h2><div class="tablewrap"><table><thead><tr><th class="l">Mercado</th><th class="l">Momento</th><th>n</th><th>CLV Betano</th><th>CLV&gt;0</th><th>CLV vs DK</th><th>Mov. precio (props)</th></tr></thead><tbody>
+    ${(c.por_mercado || []).map(r => `<tr><td class="l">${esc(r.grupo)}</td><td class="l">${esc(r.momento)}</td><td>${r.n}</td><td>${r.clv == null ? '—' : sgn(100 * r.clv) + '%'}</td><td>${pct(r.pos)}</td><td>${r.clv_dk == null ? '—' : sgn(100 * r.clv_dk) + '%'}</td><td>${r.mov == null ? '—' : sgn(100 * r.mov, 2) + '%'}</td></tr>`).join('')}</tbody></table></div>
+    <h2>¿El CLV separa aciertos dentro de cada tramo de P%?</h2>
+    ${(c.clv_separa || []).length ? bandTable(c.clv_separa, 'CLV') : '<p class="small">Todavía no hay líneas liquidadas con CLV.</p>'}`;
+})();
+
+// --- DESCANSO Y BAJAS
+(() => {
+  const k = D.criticas || {}, el = $('#s-crit');
+  const tbl = rows => `<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Grupo</th><th>n</th><th>Gana local</th><th>P mercado</th><th>Diferencia</th><th>Cubre local</th><th>Residuo vs línea</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="l">${esc(r.grupo)}</td><td>${r.n}</td><td>${pct(r.gana_local)}</td><td>${pct(r.p_mercado)}</td><td>${sgn(100 * (r.gana_local - r.p_mercado))} pp</td><td>${pct(r.cubre_local)}</td><td>${sgn(r.resid_vs_linea)} pts</td></tr>`).join('') + '</tbody></table></div>';
+  const block = (title, rows) => `<h2>${title}</h2>${divBars(rows, r => r.grupo, r => r.resid_vs_linea, v => sgn(v) + ' pts',
+    r => `<b>${esc(r.grupo)}</b> (n = ${r.n})<br>gana local ${pct(r.gana_local)} vs mercado ${pct(r.p_mercado)}<br>cubre local ${pct(r.cubre_local)} · residuo ${sgn(r.resid_vs_linea)} pts`, 'pts', 3)}${tbl(rows)}`;
+  el.innerHTML = `<p class="note">¿El mercado ya tiene en cuenta el descanso y las bajas? Residuo vs línea = margen local + hándicap de cierre
+    (positivo: el local rindió más de lo que decía la línea). Si una barra se aleja de 0 con n grande, el mercado está ignorando esa variable.
+    ${k.n || 0} partidos de temporada regular 2024-27. Bajas = valor de la rotación que no jugó (quién faltó realmente).</p>
+    ${block('Back-to-back', k.b2b || [])}${block('Diferencia de días de descanso', k.descanso_dif || [])}${block('Bajas de la rotación', k.bajas || [])}`;
+})();
+
+show((location.hash || '#hoy').slice(1));
+</script>
+</body>
+</html>
