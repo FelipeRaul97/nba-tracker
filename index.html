@@ -110,6 +110,7 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
   <div class="metrics" id="metrics"></div>
   <nav class="tabs" id="tabs"></nav>
   <section id="t-partidos"></section>
+  <section id="t-reglas"></section>
   <section id="t-registro"></section>
   <section id="t-tendencias"></section>
   <section id="t-mercados"></section>
@@ -160,7 +161,7 @@ const m = D.meta || {};
 $('#meta').innerHTML = `Actualizado ${esc(m.generado)} · base ${Object.entries(m.partidos_base || {}).map(([s, n]) => `${s - 1}-${String(s).slice(2)}: ${n}`).join(' · ')} partidos · calibración ${esc((m.calib || []).join(', '))} · SD margen ${num(m.sd_margen)} · SD total ${num(m.sd_total)} · decisión por P% (EV y CLV son variables de estudio)`;
 
 // ---------- pestañas
-const TABS = [['partidos', 'Partidos'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
+const TABS = [['partidos', 'Partidos'], ['reglas', 'Reglas (PICK)'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
   ['estudio', 'Estudio EV / CLV'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas'], ['equipos', 'Por equipo'], ['datos', 'Datos']];
 $('#tabs').innerHTML = TABS.map(([k, t]) => `<button data-k="${k}">${t}</button>`).join('');
 const showTab = k => { document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
@@ -250,7 +251,17 @@ function detail(g) {
       <span>Total IC 80 %</span><span>${num(e.ic80?.[0], 0)}–${num(e.ic80?.[1], 0)}${r ? ` <span class="muted">(real ${r.total})</span>` : ''}</span>
       <span>Descanso ${esc(g.home)}</span><span>${rest(g.descanso?.home)}</span><span>Descanso ${esc(g.away)}</span><span>${rest(g.descanso?.away)}</span>
       <span>Bajas ${esc(g.home)}</span><span>${bajas('home')}</span><span>Bajas ${esc(g.away)}</span><span>${bajas('away')}</span>
-      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>${propsTable(g)}${regTable(g)}`;
+      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>${picksTable(g)}${propsTable(g)}${regTable(g)}`;
+}
+function picksTable(g) {
+  const pk = g.picks || [];
+  if (!pk.length) return '';
+  const rows = pk.filter(x => !x.regla.startsWith('H5')).map(x => `<tr><td class="l">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td>
+    <td class="muted">${x.cuota ? num(x.cuota, 2) : '—'}</td><td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td></tr>`).join('');
+  const props = pk.filter(x => x.regla.startsWith('H5')), pd_ = props.filter(x => x.hit != null);
+  return `<div class="card-title" style="margin-top:14px">Reglas (PICK) — elegidas solo por P; la cuota es informativa</div>
+    <div class="tablewrap"><table><thead><tr><th class="l">Regla</th><th class="l">Selección</th><th>P</th><th>Cuota (info)</th><th>Resultado</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${props.length ? `<p class="note">H5 Props: ${props.length} escalones${pd_.length ? ` · ${pd_.filter(x => x.hit === 1).length}/${pd_.length} aciertos` : ''} (detalle en la pestaña Reglas).</p>` : ''}`;
 }
 function propsTable(g) {
   const pr = Object.entries(g.props || {});
@@ -298,6 +309,29 @@ function lineChart(series, { yfmt = v => v, ylab = '', zero = false, h = 260 } =
     const tt = series.map(se => { const q = se.pts[i]; return q ? `${esc(se.name)}: <b>${yfmt(q.y)}</b>` : ''; }).join('<br>');
     s += `<rect x="${xa}" y="${T}" width="${Math.max(1, xb - xa)}" height="${H - T - B}" fill="transparent" data-tip="<b>${esc(p.lbl || '')}</b>${p.extra ? ' · ' + esc(p.extra) : ''}<br>${tt}"/>`; });
   return s + '</svg>';
+}
+
+// ---------- REGLAS (PICK)
+let reglaSel = '';
+function renderReglas() {
+  const R = D.reglas || [], el = $('#t-reglas');
+  if (!R.length) { el.innerHTML = '<div class="empty">Todavía no hay picks: se generan al analizar partidos.</div>'; return; }
+  const all = games().flatMap(g => (g.picks || []).map(x => ({ ...x, g })));
+  const sel = all.filter(x => !reglaSel || x.regla === reglaSel).sort((a, b) => (b.g.fecha + b.g.start_utc).localeCompare(a.g.fecha + a.g.start_utc));
+  el.innerHTML = `<p class="note" style="margin-bottom:12px">Cada regla elige su selección <b>solo por P</b>; la línea sale del modelo (la de P más cercana al objetivo).
+    Se mide si el acierto real coincide con la P prometida. La cuota de Betano se anota si existe esa línea exacta y el P&L es solo informativo.
+    Controles = líneas principales del mercado, para comparar.</p>
+    <div class="card"><div class="card-title">Resumen por regla</div><div class="tablewrap"><table><thead><tr><th class="l">Regla</th><th>Picks</th><th>Liquidados</th><th>Aciertos</th><th>Acierto</th><th>P media</th><th>Acierto − P</th><th>Días</th><th>P&L info (n con cuota)</th></tr></thead><tbody>
+    ${R.map(r => `<tr><td class="l"><b>${esc(r.regla)}</b></td><td>${r.n}</td><td>${r.liquidadas}</td><td>${r.aciertos}</td><td>${pct(r.acierto)}</td><td>${pct(r.p_media)}</td>
+      <td class="${r.liquidadas >= 30 ? (r.acierto - r.p_media > .03 ? 'hit1' : r.acierto - r.p_media < -.03 ? 'hit0' : '') : 'muted'}">${r.acierto == null ? '—' : sgn(100 * (r.acierto - r.p_media)) + ' pp'}</td>
+      <td>${r.dias}</td><td class="muted">${r.pl_info == null ? '—' : sgn(r.pl_info, 2) + 'u (' + r.n_cuota + ')'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="note">Con menos de ~30 picks liquidados por regla la diferencia acierto − P es ruido (en gris). Con P ≈ 84 % lo esperable es fallar 1 de cada 6.</p></div>
+    <div class="card"><div class="card-title">Detalle</div>
+      <div class="filters">Regla: <select id="rg-sel"><option value="">Todas</option>${R.map(r => `<option ${r.regla === reglaSel ? 'selected' : ''}>${esc(r.regla)}</option>`).join('')}</select><span class="count">${sel.length} picks</span></div>
+      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Regla</th><th class="l">Selección</th><th>P</th><th>Cuota (info)</th><th>Resultado</th></tr></thead><tbody>
+      ${sel.slice(0, 600).map(x => `<tr><td class="l">${esc(x.g.fecha)}</td><td class="l">${esc(x.g.partido)}</td><td class="l">${x.g.real ? x.g.real.pts_away + '–' + x.g.real.pts_home : ''}</td><td class="l">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td><td class="muted">${x.cuota ? num(x.cuota, 2) : '—'}</td>
+        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#rg-sel').onchange = e => { reglaSel = e.target.value; renderReglas(); };
 }
 
 // ---------- REGISTRO (todas las cuotas, tipo d2)
@@ -514,7 +548,7 @@ function renderDatos() {
 }
 
 function renderAll() {
-  renderMetrics(); renderPartidos(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
+  renderMetrics(); renderPartidos(); renderReglas(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
 }
 renderAll();
 showTab((location.hash || '#partidos').slice(1));
