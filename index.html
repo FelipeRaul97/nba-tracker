@@ -250,7 +250,16 @@ function detail(g) {
       <span>Total IC 80 %</span><span>${num(e.ic80?.[0], 0)}–${num(e.ic80?.[1], 0)}${r ? ` <span class="muted">(real ${r.total})</span>` : ''}</span>
       <span>Descanso ${esc(g.home)}</span><span>${rest(g.descanso?.home)}</span><span>Descanso ${esc(g.away)}</span><span>${rest(g.descanso?.away)}</span>
       <span>Bajas ${esc(g.home)}</span><span>${bajas('home')}</span><span>Bajas ${esc(g.away)}</span><span>${bajas('away')}</span>
-      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>${regTable(g)}`;
+      <span>Cuotas</span><span>${esc(g.fuente_cuotas || '—')}</span></div></div>${propsTable(g)}${regTable(g)}`;
+}
+function propsTable(g) {
+  const pr = Object.entries(g.props || {});
+  if (!pr.length) return '';
+  const rows = pr.map(([n, v]) => `<tr><td class="l">${esc(n)}</td><td class="l">${esc(v.equipo)}</td><td>${num(v.min, 0)}</td><td><b>${num(v.pts)}</b></td><td>${num(v.reb)}</td><td>${num(v.ast)}</td><td>${num(v.fg3m)}</td>
+    <td class="${v.p_baja > 0 ? 'hit0' : 'muted'}">${v.p_baja > 0 ? pct(v.p_baja, 0) : '—'}</td></tr>`).join('');
+  return `<details style="margin-top:12px"><summary class="small" style="cursor:pointer">Proyección por jugador (${pr.length}) — media esperada si juega</summary>
+    <div class="tablewrap" style="max-height:340px;margin-top:6px"><table><thead><tr><th class="l">Jugador</th><th class="l">Equipo</th><th>Min</th><th>Puntos</th><th>Rebotes</th><th>Asist.</th><th>Triples</th><th>P de baja</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">Modelo de props: minutos (gradient boosting) × producción por minuto ajustada por los puntos esperados del equipo; P por escalón con mezcla por minutos y recalibración por rol (backtest 2026-27: error de calibración ≤ 1.4 pp).</p></details>`;
 }
 const SIDE = (g, side) => ({ home: g.home, away: g.away, over: 'Más', under: 'Menos', draw: 'Empate', yes: 'Sí', no: 'No' }[side] ?? side);
 function regTable(g) {
