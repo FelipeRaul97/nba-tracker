@@ -109,6 +109,8 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
   </div>
   <div class="metrics" id="metrics"></div>
   <nav class="tabs" id="tabs"></nav>
+  <section id="t-picks"></section>
+  <section id="t-apuestas"></section>
   <section id="t-partidos"></section>
   <section id="t-reglas"></section>
   <section id="t-registro"></section>
@@ -125,6 +127,7 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
 <script>
 'use strict';
 const D = window.NBA || {};
+const PUB = !!D.publico;   // tracker público: SOLO las apuestas reales
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pct = (x, d = 1) => x == null || isNaN(x) ? '—' : (100 * x).toFixed(d) + '%';
@@ -158,15 +161,72 @@ const games = () => D.partidos || [];
 const sels = (gs = games()) => gs.flatMap(g => g.selecciones.map(s => ({ ...s, g, grupo: mercadoGrupo(s, g) }))).filter(s => !s.g.tardia);
 
 const m = D.meta || {};
-$('#meta').innerHTML = `Actualizado ${esc(m.generado)} · base ${Object.entries(m.partidos_base || {}).map(([s, n]) => `${s - 1}-${String(s).slice(2)}: ${n}`).join(' · ')} partidos · calibración ${esc((m.calib || []).join(', '))} · SD margen ${num(m.sd_margen)} · SD total ${num(m.sd_total)} · decisión por P% (EV y CLV son variables de estudio)`;
+$('#meta').innerHTML = PUB ? `Actualizado ${esc(m.generado)} · PICK y COMBO del sistema + análisis de todos los mercados · análisis estadístico, no consejo de apuestas` : `Actualizado ${esc(m.generado)} · base ${Object.entries(m.partidos_base || {}).map(([s, n]) => `${s - 1}-${String(s).slice(2)}: ${n}`).join(' · ')} partidos · calibración ${esc((m.calib || []).join(', '))} · SD margen ${num(m.sd_margen)} · SD total ${num(m.sd_total)} · decisión por P% (EV y CLV son variables de estudio)`;
 
 // ---------- pestañas
-const TABS = [['partidos', 'Partidos'], ['reglas', 'Reglas (PICK)'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
+const TABS_ALL = [['apuestas', 'Mis apuestas'], ['partidos', 'Partidos'], ['reglas', 'Reglas (PICK)'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
   ['estudio', 'Estudio EV / CLV'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas'], ['equipos', 'Por equipo'], ['datos', 'Datos']];
+const TABS = PUB ? [['picks', 'Apuestas'], ['reglas', 'Por regla'], ['registro', 'Mercados (todas las cuotas)'], ['calib', 'Calibración']]
+  .concat((D.apuestas || []).length ? [['apuestas', 'Apostadas por mí']] : []) : [['picks', 'Apuestas']].concat(TABS_ALL);
 $('#tabs').innerHTML = TABS.map(([k, t]) => `<button data-k="${k}">${t}</button>`).join('');
 const showTab = k => { document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === 't-' + k)); history.replaceState(null, '', '#' + k); };
 $('#tabs').onclick = e => e.target.dataset.k && showTab(e.target.dataset.k);
+
+// ---------- APUESTAS: PICK y COMBO del sistema por partido (como el tracker de ForescoreClubes)
+const tipoDe = r => r.startsWith('H4') ? 'COMBO' : r.startsWith('H5') ? 'PROP' : r.startsWith('Control') ? 'CONTROL' : 'PICK';
+let pkF = { tipo: '', estado: '' }, pkOpen = new Set();
+function pickRows() {
+  return games().flatMap(g => (g.picks || []).map(x => ({ ...x, g, tipo: tipoDe(x.regla) })));
+}
+function renderPicks() {
+  const el = $('#t-picks'), gs = games().slice().reverse();
+  if (!gs.length) { el.innerHTML = '<div class="empty">Todavía no hay partidos analizados.</div>'; return; }
+  const ok = x => (!pkF.tipo || x.tipo === pkF.tipo) && (!pkF.estado || (pkF.estado === 'pend' ? x.hit == null : pkF.estado === 'ok' ? x.hit === 1 : x.hit === 0));
+  const pl = x => x.hit == null || !x.cuota ? 0 : x.hit ? x.cuota - 1 : -1;
+  el.innerHTML = `<div class="filters">Filtrar: <select id="pk-t"><option value="">Todos los tipos</option>${['PICK', 'COMBO', 'PROP', 'CONTROL'].map(t => `<option ${t === pkF.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <select id="pk-e"><option value="">Todos</option><option value="pend" ${pkF.estado === 'pend' ? 'selected' : ''}>Pendiente</option><option value="ok" ${pkF.estado === 'ok' ? 'selected' : ''}>Ganada</option><option value="ko" ${pkF.estado === 'ko' ? 'selected' : ''}>Perdida</option></select></div>
+    <div class="tablewrap scroll"><table><thead><tr><th class="l"></th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Resultado</th><th class="l">Apuestas</th><th>Ganadas</th><th>Perdidas</th><th>Pend.</th><th>P&L (1u, cuota Betano)</th></tr></thead><tbody>
+    ${gs.map(g => { const xs = (g.picks || []).map(x => ({ ...x, tipo: tipoDe(x.regla) })).filter(ok); if (!xs.length) return '';
+      const open = pkOpen.has(g.game_id), cnt = t => xs.filter(x => x.tipo === t).length;
+      const head = `<tr class="game" data-id="${esc(g.game_id)}"><td class="l"><span class="caret">${open ? '▼' : '▶'}</span></td><td class="l">${esc(g.fecha)}</td><td class="l"><b>${esc(g.away)}</b> @ <b>${esc(g.home)}</b></td>
+        <td class="l">${g.real ? g.real.pts_away + '–' + g.real.pts_home : `<span class="muted">${hora(g.start_utc)}</span>`}</td>
+        <td class="l small">${['PICK', 'COMBO', 'PROP', 'CONTROL'].filter(cnt).map(t => `${cnt(t)} ${t}`).join(' · ')}</td>
+        <td class="hit1">${xs.filter(x => x.hit === 1).length || ''}</td><td class="hit0">${xs.filter(x => x.hit === 0).length || ''}</td><td>${xs.filter(x => x.hit == null).length || ''}</td>
+        <td>${sgn(xs.reduce((t, x) => t + pl(x), 0), 2)}</td></tr>`;
+      const det = open ? `<tr class="detail"><td colspan="9"><table><thead><tr><th class="l">Tipo</th><th class="l">Regla</th><th class="l">Apuesta</th><th>P</th><th>Cuota</th><th>Estado</th><th>P&L</th></tr></thead><tbody>
+        ${xs.map(x => `<tr><td class="l"><span class="chip">${x.tipo}</span></td><td class="l small">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td><td>${x.cuota ? num(x.cuota, 2) : '<span class="muted">—</span>'}</td>
+          <td>${x.hit === 1 ? '<span class="badge ok">GANADA</span>' : x.hit === 0 ? '<span class="badge ko">PERDIDA</span>' : '<span class="badge pd">PENDIENTE</span>'}</td><td>${x.hit == null || !x.cuota ? '—' : sgn(pl(x), 2)}</td></tr>`).join('')}</tbody></table></td></tr>` : '';
+      return head + det; }).join('')}</tbody></table></div>
+    <p class="note">Las apuestas las eligen las reglas <b>solo por P</b> (PICK: ganador P ≥ 70 %, hándicap del perro y totales holgados ≈ 84 %; COMBO: perro + total ≈ 70 %; PROP: escalón de titular ≈ 80 %; CONTROL: líneas principales, para comparar).
+    La cuota es la de Betano para esa línea exacta si la publicaba; el P&L es informativo (1u).</p>`;
+  $('#pk-t').onchange = e => { pkF.tipo = e.target.value; renderPicks(); };
+  $('#pk-e').onchange = e => { pkF.estado = e.target.value; renderPicks(); };
+  document.querySelectorAll('#t-picks tr.game').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; pkOpen.has(id) ? pkOpen.delete(id) : pkOpen.add(id); renderPicks(); });
+}
+
+// ---------- APOSTADAS POR MÍ (apuesta.py)
+function apStats(a) {
+  const done = a.filter(x => x.hit != null), st = done.reduce((s, x) => s + x.stake, 0), pl = done.reduce((s, x) => s + x.pl, 0);
+  const conp = done.filter(x => x.p != null);
+  return { n: a.length, done: done.length, pend: a.length - done.length, acierto: done.length ? done.filter(x => x.hit === 1).length / done.length : null,
+    p: conp.length ? conp.reduce((s, x) => s + x.p, 0) / conp.length : null, stake: st, pl, roi: st ? pl / st : null,
+    cuota: done.length ? done.reduce((s, x) => s + x.cuota, 0) / done.length : null };
+}
+function renderApuestas() {
+  const A = (D.apuestas || []).slice().reverse(), el = $('#t-apuestas');
+  if (!A.length) { el.innerHTML = '<div class="empty">Todavía no hay apuestas registradas.</div>'; return; }
+  const s = apStats(A);
+  const byDay = {}; A.slice().reverse().filter(x => x.hit != null).forEach(x => (byDay[x.fecha] ||= []).push(x));
+  let acc = 0; const pts = Object.entries(byDay).map(([d, xs], i) => { acc += xs.reduce((t, x) => t + x.pl, 0); return { x: i, y: acc, lbl: d.slice(5), extra: `${xs.length} apuestas` }; });
+  el.innerHTML = `${pts.length > 1 ? `<div class="card"><div class="card-title">P&L acumulado</div>${lineChart([{ name: 'P&L', c: 'var(--series-1)', pts }], { yfmt: v => sgn(v, 2), zero: true })}</div>` : ''}
+    <div class="card"><div class="card-title">Apuestas (${s.n})</div><div class="tablewrap scroll"><table><thead><tr><th class="l">#</th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Apuesta</th><th>Cuota</th><th>Stake</th><th>P modelo</th><th class="l">Final</th><th>Resultado</th><th>P&L</th></tr></thead><tbody>
+    ${A.map(x => `<tr><td class="l muted">${x.id}</td><td class="l">${esc(x.fecha)}</td><td class="l">${esc(x.partido)}</td><td class="l"><b>${esc(x.seleccion)}</b>${x.patas > 1 ? ` <span class="chip">combo ${x.patas}</span>` : ''}${x.nota ? `<div class="small muted">${esc(x.nota)}</div>` : ''}</td>
+      <td>${num(x.cuota, 2)}</td><td>${num(x.stake, 2)}</td><td>${pct(x.p)}</td><td class="l">${esc(x.final || hora(x.start_utc))}</td>
+      <td>${x.hit === 1 ? '<span class="badge ok">✓ ganada</span>' : x.hit === 0 ? '<span class="badge ko">✗ perdida</span>' : '<span class="badge pd">pendiente</span>'}</td>
+      <td class="${x.pl > 0 ? 'hit1' : x.pl < 0 ? 'hit0' : ''}">${x.pl == null ? '—' : sgn(x.pl, 2)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="note">P modelo = probabilidad del sistema al registrar la apuesta (combos: producto de las patas). Se compara con el acierto real.</p></div>`;
+}
 
 // ---------- estadísticas comunes
 function stats(ss) {
@@ -179,6 +239,18 @@ function stats(ss) {
 }
 
 function renderMetrics() {
+  if (PUB) {
+    const xs = pickRows().filter(x => x.tipo !== 'CONTROL'), d_ = xs.filter(x => x.hit != null), cc = d_.filter(x => x.cuota);
+    const plv = cc.reduce((t, x) => t + (x.hit ? x.cuota - 1 : -1), 0);
+    const s = { n: xs.length, done: d_.length, pend: xs.length - d_.length, acierto: d_.length ? mean(d_.map(x => x.hit)) : null, p: d_.length ? mean(d_.map(x => x.p)) : null,
+      cuota: cc.length ? mean(cc.map(x => x.cuota)) : null, stake: cc.length, pl: plv, roi: cc.length ? plv / cc.length : null }, M = (lbl, val, cls = '', sub = '') => `<div class="metric"><div class="lbl">${lbl}</div><div class="val ${cls}">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#metrics').innerHTML = [M('Apuestas', s.n), M('Liquidadas', s.done), M('Pendientes', s.pend, s.pend ? 'warn' : ''),
+      M('Acierto', pct(s.acierto)), M('P media', pct(s.p), '', 'prometida por el modelo'),
+      M('Calibración', s.acierto == null || s.p == null ? '—' : sgn(100 * (s.acierto - s.p)) + ' pp', '', 'acierto − P'),
+      M('Cuota media', num(s.cuota, 2)), M('Con cuota', s.stake, '', 'apuestas con cuota Betano'), M('P&L', s.done ? sgn(s.pl, 2) : '—', s.pl >= 0 ? 'good' : 'bad'),
+      M('ROI', s.roi == null ? '—' : sgn(100 * s.roi) + '%', s.roi >= 0 ? 'good' : 'bad')].join('');
+    return;
+  }
   const gs = games(), ss = sels(gs), s = stats(ss), dif = s.acierto != null ? s.acierto - s.p : null, c = D.clv || {};
   const M = (lbl, val, cls = '', sub = '') => `<div class="metric"><div class="lbl">${lbl}</div><div class="val ${cls}">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const R = D.registro || {};
@@ -442,6 +514,14 @@ function bandTable(rows, extra) {
       return `<tr><td class="l">${esc(r.tramo)}</td><td>${r.n}</td><td>${pct(r.p_media)}</td><td>${pct(r.acierto)}</td><td>${sgn(100 * (r.acierto - r.p_media))} pp</td>${extra ? `<td>${r.n_pos ?? '—'}</td><td>${pct(r.acierto_pos)}</td><td>${r.n_neg ?? '—'}</td><td>${pct(r.acierto_neg)}</td><td class="${r.n_pos >= 30 && r.n_neg >= 30 ? (sep > .05 ? 'hit1' : sep < -.05 ? 'hit0' : '') : 'muted'}" ${r.n_pos < 30 || r.n_neg < 30 ? 'data-tip="Algún grupo tiene n &lt; 30: no concluye"' : ''}>${sep == null ? '—' : sgn(100 * sep) + ' pp'}</td>` : ''}</tr>`; }).join('') + '</tbody></table></div>';
 }
 let calibMk = '';
+function renderCalibPub() {
+  const a = pickRows().filter(x => x.tipo !== 'CONTROL' && x.hit != null && x.p != null);
+  const rows = BANDS.map(b => { const c = a.filter(x => band(x.p) === b); return c.length ? { tramo: b, n: c.length, p_media: mean(c.map(x => x.p)), acierto: mean(c.map(x => x.hit)) } : null; }).filter(Boolean);
+  const low = a.filter(x => x.p < .5);
+  $('#t-calib').innerHTML = `<div class="card"><div class="card-title">Apuestas del sistema: P prometida vs acierto real</div>
+    ${rows.length ? calibChart([{ name: 'Apuestas (PICK, COMBO, PROP)', c: 'var(--series-1)', rows }]) + bandTable(rows) : '<div class="empty">Sin apuestas liquidadas con P del modelo.</div>'}
+    ${low.length ? `<p class="note">${low.length} apuestas con P &lt; 50 % (no entran en la curva).</p>` : ''}</div>`;
+}
 function renderCalib() {
   const bt = D.backtest || {}, ss = sels().filter(s => !calibMk || s.grupo === calibMk);
   const series = [{ name: 'Backtest 2024-26 (ganador)', c: 'var(--series-1)', rows: bt.calibracion?.tabla || [] },
@@ -548,10 +628,11 @@ function renderDatos() {
 }
 
 function renderAll() {
-  renderMetrics(); renderPartidos(); renderReglas(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
+  if (PUB) { renderMetrics(); renderPicks(); renderReglas(); renderRegistro(); renderApuestas(); renderCalibPub(); return; }
+  renderMetrics(); renderPicks(); renderApuestas(); renderPartidos(); renderReglas(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
 }
 renderAll();
-showTab((location.hash || '#partidos').slice(1));
+{ const h = (location.hash || '#picks').slice(1); showTab(TABS.some(t => t[0] === h) ? h : 'picks'); }
 </script>
 </body>
 </html>
