@@ -186,14 +186,14 @@ function renderPicks() {
   const pl = x => x.hit == null || !x.cuota ? 0 : x.hit ? x.cuota - 1 : -1;
   el.innerHTML = `<div class="filters">Filtrar: <select id="pk-t"><option value="">Todos los tipos</option>${['PICK', 'COMBO', 'PROP', 'CONTROL'].map(t => `<option ${t === pkF.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
     <select id="pk-e"><option value="">Todos</option><option value="pend" ${pkF.estado === 'pend' ? 'selected' : ''}>Pendiente</option><option value="ok" ${pkF.estado === 'ok' ? 'selected' : ''}>Ganada</option><option value="ko" ${pkF.estado === 'ko' ? 'selected' : ''}>Perdida</option></select></div>
-    <div class="tablewrap scroll"><table><thead><tr><th class="l"></th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Resultado</th><th class="l">Apuestas</th><th>Ganadas</th><th>Perdidas</th><th>Pend.</th><th>P&L (1u, cuota Betano)</th></tr></thead><tbody>
+    <div class="tablewrap scroll"><table><thead><tr><th class="l"></th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Resultado</th><th class="l">Apuestas</th><th>Ganadas</th><th>Perdidas</th><th>Pend.</th><th>P&L sin CONTROL (1u, cuota Betano)</th></tr></thead><tbody>
     ${gs.map(g => { const xs = (g.picks || []).map(x => ({ ...x, tipo: tipoDe(x.regla) })).filter(ok); if (!xs.length) return '';
       const open = pkOpen.has(g.game_id), cnt = t => xs.filter(x => x.tipo === t).length;
       const head = `<tr class="game" data-id="${esc(g.game_id)}"><td class="l"><span class="caret">${open ? '▼' : '▶'}</span></td><td class="l">${esc(g.fecha)}</td><td class="l"><b>${esc(g.away)}</b> @ <b>${esc(g.home)}</b></td>
         <td class="l">${g.real ? g.real.pts_away + '–' + g.real.pts_home : `<span class="muted">${hora(g.start_utc)}</span>`}</td>
         <td class="l small">${['PICK', 'COMBO', 'PROP', 'CONTROL'].filter(cnt).map(t => `${cnt(t)} ${t}`).join(' · ')}</td>
         <td class="hit1">${xs.filter(x => x.hit === 1).length || ''}</td><td class="hit0">${xs.filter(x => x.hit === 0).length || ''}</td><td>${xs.filter(x => x.hit == null).length || ''}</td>
-        <td>${sgn(xs.reduce((t, x) => t + pl(x), 0), 2)}</td></tr>`;
+        <td>${sgn(xs.filter(x => x.tipo !== 'CONTROL').reduce((t, x) => t + pl(x), 0), 2)}</td></tr>`;
       const det = open ? `<tr class="detail"><td colspan="9"><table><thead><tr><th class="l">Tipo</th><th class="l">Regla</th><th class="l">Apuesta</th><th>P</th><th>Cuota</th><th>Estado</th><th>P&L</th></tr></thead><tbody>
         ${xs.map(x => `<tr><td class="l"><span class="chip">${x.tipo}</span></td><td class="l small">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td><td>${x.cuota ? num(x.cuota, 2) : '<span class="muted">—</span>'}</td>
           <td>${x.hit === 1 ? '<span class="badge ok">GANADA</span>' : x.hit === 0 ? '<span class="badge ko">PERDIDA</span>' : '<span class="badge pd">PENDIENTE</span>'}</td><td>${x.hit == null || !x.cuota ? '—' : sgn(pl(x), 2)}</td></tr>`).join('')}</tbody></table></td></tr>` : '';
