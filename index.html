@@ -400,8 +400,8 @@ function renderReglas() {
     <p class="note">Con menos de ~30 picks liquidados por regla la diferencia acierto − P es ruido (en gris). Con P ≈ 84 % lo esperable es fallar 1 de cada 6.</p></div>
     <div class="card"><div class="card-title">Detalle</div>
       <div class="filters">Regla: <select id="rg-sel"><option value="">Todas</option>${R.map(r => `<option ${r.regla === reglaSel ? 'selected' : ''}>${esc(r.regla)}</option>`).join('')}</select><span class="count">${sel.length} picks</span></div>
-      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Regla</th><th class="l">Selección</th><th>P</th><th>Cuota (info)</th><th>Resultado</th></tr></thead><tbody>
-      ${sel.slice(0, 600).map(x => `<tr><td class="l">${esc(x.g.fecha)}</td><td class="l">${esc(x.g.partido)}</td><td class="l">${x.g.real ? x.g.real.pts_away + '–' + x.g.real.pts_home : ''}</td><td class="l">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td><td class="muted">${x.cuota ? num(x.cuota, 2) : '—'}</td>
+      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Regla</th><th class="l">Selección</th><th>P</th><th>Cuota (info)</th><th class="l">Dato real</th><th>Resultado</th></tr></thead><tbody>
+      ${sel.slice(0, 600).map(x => `<tr><td class="l">${esc(x.g.fecha)}</td><td class="l">${esc(x.g.partido)}</td><td class="l">${x.g.real ? x.g.real.pts_away + '–' + x.g.real.pts_home : ''}</td><td class="l">${esc(x.regla)}</td><td class="l">${esc(x.seleccion)}</td><td>${pct(x.p)}</td><td class="muted">${x.cuota ? num(x.cuota, 2) : '—'}</td><td class="l muted">${esc(x.dato || '—')}</td>
         <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
   $('#rg-sel').onchange = e => { reglaSel = e.target.value; renderReglas(); };
 }
