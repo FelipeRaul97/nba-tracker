@@ -121,6 +121,7 @@ svg .axis { stroke: var(--border-2); } svg .gridl { stroke: var(--grid); }
   <section id="t-clv"></section>
   <section id="t-crit"></section>
   <section id="t-equipos"></section>
+  <section id="t-hip"></section>
   <section id="t-datos"></section>
 </div><div id="tip"></div></div>
 <script src="data.js"></script>
@@ -165,8 +166,8 @@ $('#meta').innerHTML = PUB ? `Actualizado ${esc(m.generado)} · PICK y COMBO del
 
 // ---------- pestañas
 const TABS_ALL = [['apuestas', 'Mis apuestas'], ['partidos', 'Partidos'], ['reglas', 'Reglas (PICK)'], ['registro', 'Registro (todas las cuotas)'], ['tendencias', 'Tendencias'], ['mercados', 'Mercados'], ['calib', 'Calibración'],
-  ['estudio', 'Estudio EV / CLV'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas'], ['equipos', 'Por equipo'], ['datos', 'Datos']];
-const TABS = PUB ? [['picks', 'Apuestas'], ['reglas', 'Por regla'], ['registro', 'Mercados (todas las cuotas)'], ['calib', 'Calibración']]
+  ['estudio', 'Estudio EV / CLV'], ['clv', 'CLV Betano'], ['crit', 'Descanso y bajas'], ['equipos', 'Por equipo'], ['hip', 'Hipótesis'], ['datos', 'Datos']];
+const TABS = PUB ? [['picks', 'Apuestas'], ['reglas', 'Por regla'], ['registro', 'Mercados (todas las cuotas)'], ['calib', 'Calibración'], ['hip', 'Hipótesis']]
   .concat((D.apuestas || []).length ? [['apuestas', 'Apostadas por mí']] : []) : [['picks', 'Apuestas']].concat(TABS_ALL);
 $('#tabs').innerHTML = TABS.map(([k, t]) => `<button data-k="${k}">${t}</button>`).join('');
 const showTab = k => { document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
@@ -613,6 +614,59 @@ function renderEquipos() {
 }
 
 // ---------- DATOS
+// ---------- HIPÓTESIS vigiladas (model/hipotesis.py; data/backtest/RENTABILIDAD.md)
+let hipSel = '', hipOficial = false;
+const ESTADO = { acumulando: ['pd', 'acumulando'], pasa: ['ok', 'pasa el criterio'], 'no pasa': ['ko', 'no pasa'] };
+function hipPL(x) { return x.hit == null ? 0 : x.hit ? x.price - 1 : -1; }
+function hipCurve(rows, desde) {
+  const r = rows.filter(x => x.hit != null).slice().reverse();
+  if (r.length < 2) return '<div class="empty" style="padding:18px">Sin selecciones liquidadas suficientes para la curva.</div>';
+  let acc = 0; const pts = r.map(x => (acc += hipPL(x)));
+  const W = 900, H = 170, P = 34, lo = Math.min(0, ...pts), hi = Math.max(0, ...pts), sp = hi - lo || 1;
+  const X = i => P + (W - 2 * P) * i / (pts.length - 1), Y = v => H - 22 - (H - 40) * (v - lo) / sp;
+  const iv = r.findIndex(x => x.fecha >= desde);
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="P&L acumulado">
+    <line x1="${P}" x2="${W - P}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--border)"/>
+    ${iv > 0 ? `<line x1="${X(iv)}" x2="${X(iv)}" y1="8" y2="${H - 22}" stroke="var(--text-muted)" stroke-dasharray="4 4"/><text x="${X(iv) + 4}" y="16">desde ${esc(desde)}: cuenta</text><text x="${P + 2}" y="16">retroactivo</text>` : ''}
+    <path d="${line}" fill="none" stroke="var(--series-1)" stroke-width="2"/>
+    <text x="${W - P}" y="${Y(pts.at(-1)) - 6}" text-anchor="end">${sgn(pts.at(-1), 1)}u</text>
+    <text x="${P}" y="${H - 6}">${esc(r[0].fecha)}</text><text x="${W - P}" y="${H - 6}" text-anchor="end">${esc(r.at(-1).fecha)} · ${pts.length} liquidadas</text></svg>`;
+}
+function renderHip() {
+  const H = D.hipotesis || {}, R = H.resumen || [], el = $('#t-hip');
+  if (!R.length) { el.innerHTML = '<div class="empty">Sin hipótesis: correr tracker_export.py.</div>'; return; }
+  const desde = H.vigente_desde, all = H.detalle || [];
+  const rows = all.filter(x => (!hipSel || x.hid === hipSel) && (!hipOficial || x.fecha >= desde));
+  const cell = o => `<td>${o.unidades}</td><td>${pct(o.acierto)}</td><td>${num(o.cuota, 2)}</td>
+    <td class="${o.roi == null ? '' : o.roi > 0 ? 'hit1' : 'hit0'}">${o.roi == null ? '—' : sgn(100 * o.roi) + '%'}</td><td>${o.liquidadas ? sgn(o.pl, 1) + 'u' : '—'}</td>
+    <td class="muted">${o.t == null ? '—' : num(o.t, 1)}</td><td class="muted">${o.clv_dk == null ? '—' : sgn(100 * o.clv_dk) + '% (' + o.n_clv_dk + ')'}</td>`;
+  el.innerHTML = `<p class="note" style="margin-bottom:12px">Reglas de <b>estudio</b> (sin dinero), fijadas el <b>${esc(desde)}</b>. Solo cuentan las selecciones desde esa fecha;
+    las anteriores son <b>retroactivas</b>: las hipótesis salieron de esos partidos y no prueban nada. Cuota = Betano en la foto registrada.
+    t agrupa por partido (o jugador-partido). CLV vs DK = cuota tomada × P justa del cierre de DraftKings − 1.${PUB ? '' : ' Detalle y origen: data/backtest/RENTABILIDAD.md.'}</p>
+    <div class="card"><div class="card-title">Estado de las hipótesis</div><div class="tablewrap"><table><thead>
+      <tr><th class="l" rowspan="2">Hipótesis</th><th class="l" rowspan="2">Estado</th><th rowspan="2">Progreso</th><th colspan="7">Desde ${esc(desde)} (cuenta)</th><th colspan="3">Retroactivo</th></tr>
+      <tr><th>n</th><th>Acierto</th><th>Cuota</th><th>ROI</th><th>P&L</th><th>t</th><th>CLV vs DK</th><th>n</th><th>Acierto</th><th>ROI</th></tr></thead><tbody>
+    ${R.map(r => { const o = r.oficial, q = r.retro, e = ESTADO[r.estado] || ['nt', r.estado], pr = Math.min(1, o.unidades / r.n_objetivo);
+      return `<tr><td class="l"><b>${esc(r.id)}</b> ${esc(r.nombre)}</td><td class="l"><span class="badge ${e[0]}">${e[1]}</span></td>
+        <td data-tip="${o.unidades} de ${r.n_objetivo} ${esc(r.unidad)}"><div style="display:flex;align-items:center;gap:6px;justify-content:flex-end"><div style="width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden"><div style="width:${(100 * pr).toFixed(0)}%;height:100%;background:var(--series-1)"></div></div><span class="muted">${o.unidades}/${r.n_objetivo}</span></div></td>
+        ${cell(o)}<td class="muted">${q.unidades}</td><td class="muted">${pct(q.acierto)}</td><td class="muted">${q.roi == null ? '—' : sgn(100 * q.roi) + '%'}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note">Estado: "acumulando" hasta llegar al objetivo; después "pasa" si ROI &gt; 0 con t &gt; 2 (S1: CLV &gt; 0 y acierto ≥ 52.6 %). Cambiar un umbral reinicia la prueba.</p></div>
+    <div class="card"><div class="card-title">Reglas fijadas</div><div class="tablewrap"><table><thead><tr><th class="l">Hipótesis</th><th class="l">Regla</th><th class="l">De dónde sale</th><th class="l">Criterio para darla por probada</th></tr></thead><tbody>
+      ${R.map(r => `<tr><td class="l"><b>${esc(r.id)}</b></td><td class="l">${esc(r.regla)}</td><td class="l muted">${esc(r.base)}</td><td class="l">${esc(r.criterio)}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><div class="card-title">P&L acumulado (1u por selección, cuota Betano)${hipSel ? ' — ' + esc(hipSel) : ' — todas'}</div>${hipCurve(rows, desde)}</div>
+    <div class="card"><div class="card-title">Selecciones</div>
+      <div class="filters">Hipótesis: <select id="hp-sel"><option value="">Todas</option>${R.map(r => `<option value="${esc(r.id)}" ${r.id === hipSel ? 'selected' : ''}>${esc(r.id)} ${esc(r.nombre)}</option>`).join('')}</select>
+        <label><input type="checkbox" id="hp-of" ${hipOficial ? 'checked' : ''}> solo desde ${esc(desde)}</label><span class="count">${rows.length} selecciones</span></div>
+      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Hip.</th><th class="l">Selección</th><th>Cuota</th><th>P modelo</th><th>CLV vs DK</th><th>Resultado</th><th>P&L</th></tr></thead><tbody>
+      ${rows.slice(0, 600).map(x => `<tr class="${x.fecha < desde ? 'muted' : ''}"><td class="l">${esc(x.fecha)}${x.fecha < desde ? ' <span class="badge nt">retro</span>' : ''}</td><td class="l">${esc(x.partido)}</td><td class="l">${esc(x.final || '')}</td><td class="l">${esc(x.hid)}</td><td class="l">${esc(x.seleccion)}</td>
+        <td>${num(x.price, 2)}</td><td>${pct(x.p_model)}</td><td>${x.clv_dk == null ? '—' : sgn(100 * x.clv_dk) + '%'}</td>
+        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td><td>${x.hit == null ? '—' : sgn(hipPL(x), 2)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Sin selecciones.</td></tr>'}</tbody></table></div></div>`;
+  $('#hp-sel').onchange = e => { hipSel = e.target.value; renderHip(); };
+  $('#hp-of').onchange = e => { hipOficial = e.target.checked; renderHip(); };
+}
+
 function renderDatos() {
   const d = D.datos || {};
   $('#t-datos').innerHTML = `<div class="grid2"><div class="card"><div class="card-title">Fuentes — última lectura correcta</div><div class="tablewrap"><table><thead><tr><th class="l">Fuente</th><th class="l">Última OK (UTC)</th><th>Lecturas 24 h</th><th>Errores 24 h</th></tr></thead><tbody>
@@ -628,8 +682,8 @@ function renderDatos() {
 }
 
 function renderAll() {
-  if (PUB) { renderMetrics(); renderPicks(); renderReglas(); renderRegistro(); renderApuestas(); renderCalibPub(); return; }
-  renderMetrics(); renderPicks(); renderApuestas(); renderPartidos(); renderReglas(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderDatos();
+  if (PUB) { renderMetrics(); renderPicks(); renderReglas(); renderRegistro(); renderApuestas(); renderCalibPub(); renderHip(); return; }
+  renderMetrics(); renderPicks(); renderApuestas(); renderPartidos(); renderReglas(); renderRegistro(); renderTendencias(); renderMercados(); renderCalib(); renderEstudio(); renderCLV(); renderCrit(); renderEquipos(); renderHip(); renderDatos();
 }
 renderAll();
 { const h = (location.hash || '#picks').slice(1); showTab(TABS.some(t => t[0] === h) ? h : 'picks'); }
