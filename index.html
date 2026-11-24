@@ -70,6 +70,7 @@ section { display: none; } section.on { display: block; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { padding: 6px 9px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; vertical-align: middle; }
 th { color: var(--text-secondary); font-weight: 600; background: var(--surface-2); position: sticky; top: 0; z-index: 1; font-size: 12px; }
+tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface-2); font-weight: 600; border-top: 2px solid var(--border); border-bottom: 0; }
 th.sort { cursor: pointer; } th.sort:hover { color: var(--text-primary); }
 td.l, th.l { text-align: left; } td.wrap { white-space: normal; }
 tr.game { cursor: pointer; } tr.game:hover td { background: var(--surface-2); }
@@ -633,6 +634,16 @@ function hipCurve(rows, desde) {
     <text x="${W - P}" y="${Y(pts.at(-1)) - 6}" text-anchor="end">${sgn(pts.at(-1), 1)}u</text>
     <text x="${P}" y="${H - 6}">${esc(r[0].fecha)}</text><text x="${W - P}" y="${H - 6}" text-anchor="end">${esc(r.at(-1).fecha)} · ${pts.length} liquidadas</text></svg>`;
 }
+function hipTotal(rows) {
+  if (!rows.length) return '';
+  const liq = rows.filter(x => x.hit != null), n = liq.length, h = liq.filter(x => x.hit === 1).length;
+  const pl = liq.reduce((a, x) => a + hipPL(x), 0), avg = (a, f) => { const v = a.map(f).filter(z => z != null); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
+  const cuota = avg(liq, x => x.price), pm = avg(liq, x => x.p_model), clv = avg(liq, x => x.clv_dk);
+  const cls = v => v > 0 ? 'hit1' : v < 0 ? 'hit0' : '';
+  return `<tfoot><tr><td class="l">TOTAL</td><td class="l">${rows.length} selecciones · ${n} liquidadas</td><td class="l"></td><td class="l">${esc(hipSel || 'todas')}</td>
+    <td class="l">${h}/${n} aciertos${n ? ' (' + pct(h / n) + ')' : ''}</td><td>${num(cuota, 2)}</td><td>${pct(pm)}</td><td>${clv == null ? '—' : sgn(100 * clv) + '%'}</td>
+    <td class="${cls(pl)}">ROI ${n ? sgn(100 * pl / n) + '%' : '—'}</td><td class="${cls(pl)}">${sgn(pl, 2)}u</td></tr></tfoot>`;
+}
 function renderHip() {
   const H = D.hipotesis || {}, R = H.resumen || [], el = $('#t-hip');
   if (!R.length) { el.innerHTML = '<div class="empty">Sin hipótesis: correr tracker_export.py.</div>'; return; }
@@ -662,7 +673,7 @@ function renderHip() {
       <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Hip.</th><th class="l">Selección</th><th>Cuota</th><th>P modelo</th><th>CLV vs DK</th><th>Resultado</th><th>P&L</th></tr></thead><tbody>
       ${rows.slice(0, 600).map(x => `<tr class="${x.fecha < desde ? 'muted' : ''}"><td class="l">${esc(x.fecha)}${x.fecha < desde ? ' <span class="badge nt">retro</span>' : ''}</td><td class="l">${esc(x.partido)}</td><td class="l">${esc(x.final || '')}</td><td class="l">${esc(x.hid)}</td><td class="l">${esc(x.seleccion)}</td>
         <td>${num(x.price, 2)}</td><td>${pct(x.p_model)}</td><td>${x.clv_dk == null ? '—' : sgn(100 * x.clv_dk) + '%'}</td>
-        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td><td>${x.hit == null ? '—' : sgn(hipPL(x), 2)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Sin selecciones.</td></tr>'}</tbody></table></div></div>`;
+        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td><td>${x.hit == null ? '—' : sgn(hipPL(x), 2)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Sin selecciones.</td></tr>'}</tbody>${hipTotal(rows)}</table></div></div>`;
   $('#hp-sel').onchange = e => { hipSel = e.target.value; renderHip(); };
   $('#hp-of').onchange = e => { hipOficial = e.target.checked; renderHip(); };
 }
