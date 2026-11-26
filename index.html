@@ -73,6 +73,10 @@ th { color: var(--text-secondary); font-weight: 600; background: var(--surface-2
 tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface-2); font-weight: 600; border-top: 2px solid var(--border); border-bottom: 0; }
 th.sort { cursor: pointer; } th.sort:hover { color: var(--text-primary); }
 td.l, th.l { text-align: left; } td.wrap { white-space: normal; }
+th.gs, td.gs { border-left: 2px solid var(--border-2); }      /* inicio de un grupo de columnas */
+th.grp { text-align: center; color: var(--text-primary); border-bottom: 1px solid var(--border-2); letter-spacing: .02em; }
+th.grp .muted { font-weight: 400; }
+tbody tr:not(.detail):hover > td { background: var(--surface-2); }
 tr.game { cursor: pointer; } tr.game:hover td { background: var(--surface-2); }
 tr.detail > td { background: var(--page); padding: 10px 14px 14px; white-space: normal; text-align: left; }
 .caret { color: var(--text-muted); width: 14px; display: inline-block; }
@@ -151,6 +155,7 @@ document.addEventListener('mousemove', e => {
   tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px';
   tip.style.top = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8) + 'px';
 });
+['scroll', 'click', 'wheel'].forEach(ev => addEventListener(ev, () => { tip.style.display = 'none'; }, { capture: true, passive: true }));
 
 // ---------- tema
 const setTheme = t => { document.documentElement.dataset.theme = t; localStorage.setItem('nba_theme', t); $('#theme').textContent = t === 'dark' ? '☀ Claro' : '☾ Oscuro'; };
@@ -282,7 +287,7 @@ function renderPartidos() {
     <input id="pf-eq" placeholder="Equipo (ej. LAL)" size="12" value="${esc(st.equipo)}">
     <button class="btn" id="pf-clear">Limpiar</button><span class="count" id="pf-count"></span></div>
     <div class="tablewrap scroll"><table><thead><tr><th class="l"></th><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th>
-    <th>P local</th><th>Línea justa</th><th>Margen esp. → real</th><th>Total esp. → real</th><th class="l">Selecciones</th><th></th></tr></thead><tbody id="pt-body"></tbody></table></div>
+    <th class="gs">P local</th><th>Línea justa</th><th class="gs">Margen esp. → real</th><th>Total esp. → real</th><th class="l gs">Selecciones</th><th></th></tr></thead><tbody id="pt-body"></tbody></table></div>
     <p class="note">Una fila por partido; clic para ver el detalle. P local = probabilidad final (mercado sin margen + modelo). Margen y total: lo esperado antes del salto → lo que pasó.
     Solo aparecen partidos analizados (predict.py); el detalle incluye todas las cuotas registradas.</p>`;
   const bind = (id, k, ev = 'onchange') => { $(id)[ev] = e => { st[k] = e.target.value; drawRows(); }; };
@@ -302,9 +307,9 @@ function renderPartidos() {
       const row = `<tr class="game" data-id="${esc(g.game_id)}"><td class="l"><span class="caret">${open ? '▼' : '▶'}</span></td>
         <td class="l">${esc(g.fecha)}</td><td class="l"><b>${esc(g.away)}</b> @ <b>${esc(g.home)}</b></td>
         <td class="l">${r ? `${r.pts_away}–${r.pts_home}` : `<span class="muted">${hora(g.start_utc)}</span>`}</td>
-        <td><span class="mini"><span style="width:${100 * (1 - ph)}%;background:var(--series-2)"></span><span style="width:${100 * ph}%;background:var(--series-1)"></span></span>${pct(ph, 0)}</td>
-        <td>${sgn(g.linea_justa)}</td><td>${sgn(e.margen)} → ${r ? sgn(r.margen, 0) : '…'}</td><td>${num(e.total)} → ${r ? r.total : '…'}</td>
-        <td class="l">${ok ? `<span class="badge ok">${ok} ✓</span> ` : ''}${ko ? `<span class="badge ko">${ko} ✗</span> ` : ''}${pend ? `<span class="badge pd">${pend} pend.</span>` : ''}</td>
+        <td class="gs"><span class="mini"><span style="width:${100 * (1 - ph)}%;background:var(--series-2)"></span><span style="width:${100 * ph}%;background:var(--series-1)"></span></span>${pct(ph, 0)}</td>
+        <td>${sgn(g.linea_justa)}</td><td class="gs">${sgn(e.margen)} → ${r ? sgn(r.margen, 0) : '…'}</td><td>${num(e.total)} → ${r ? r.total : '…'}</td>
+        <td class="l gs">${ok ? `<span class="badge ok">${ok} ✓</span> ` : ''}${ko ? `<span class="badge ko">${ko} ✗</span> ` : ''}${pend ? `<span class="badge pd">${pend} pend.</span>` : ''}</td>
         <td>${(g.avisos || []).length ? `<span data-tip="${esc(g.avisos.join('<br>'))}">⚠</span>` : ''}</td></tr>`;
       return row + (open ? `<tr class="detail"><td colspan="10">${detail(g)}</td></tr>` : '');
     }).join('') || `<tr><td colspan="10" class="empty">Sin partidos con estos filtros (el historial empieza el 2026-11-17).</td></tr>`;
@@ -431,17 +436,19 @@ function renderRegistro() {
   el.innerHTML = `<p class="note" style="margin-bottom:12px">Como el d2 de ForescoreClubes: <b>todas</b> las cuotas que publica Betano para cada partido analizado (las dos caras de cada mercado, todas las líneas alternativas, 1er tiempo, prórroga y escaleras de jugador), con la P del modelo, la P del mercado sin margen y el resultado. Nada se descarta: sirve para medir dónde la P del modelo es honesta y dónde no.
     Las escaleras de jugador se registran sin P del modelo (todavía no hay modelo de props): se mide solo su P de mercado.</p>
     <div class="card"><div class="card-title">Por mercado — ${R.total} cuotas · ${R.con_p} con P del modelo · ${R.liquidadas} liquidadas</div>
-      <div class="tablewrap"><table><thead><tr><th class="l">Mercado</th><th>Cuotas</th><th>Con P modelo</th><th>Liquidadas</th><th>Acierto</th><th>P modelo</th><th>P mercado</th><th>Brier modelo</th><th>Brier mercado</th><th>Mejor</th></tr></thead><tbody>
+      <div class="tablewrap"><table><thead><tr><th class="l" rowspan="2">Mercado</th><th colspan="3" class="grp gs">Volumen</th><th colspan="3" class="grp gs">Acierto vs P <span class="muted">· liquidadas</span></th><th colspan="3" class="grp gs">Brier <span class="muted">· menor = mejor</span></th></tr>
+      <tr><th class="gs">Cuotas</th><th>Con P modelo</th><th>Liquidadas</th><th class="gs">Acierto</th><th>P modelo</th><th>P mercado</th><th class="gs">Modelo</th><th>Mercado</th><th>Mejor</th></tr></thead><tbody>
       ${gr.map(r => { const b = r.brier_modelo != null && r.brier_mercado != null ? (r.brier_modelo < r.brier_mercado ? 'modelo' : 'mercado') : '—';
-        return `<tr><td class="l">${esc(r.grupo)}</td><td>${r.n}</td><td>${r.con_p}</td><td>${r.liquidadas}</td><td>${pct(r.acierto)}</td><td>${pct(r.p_modelo)}</td><td>${pct(r.p_mercado)}</td><td>${num(r.brier_modelo, 3)}</td><td>${num(r.brier_mercado, 3)}</td><td class="${b === 'modelo' ? 'hit1' : ''}">${b}</td></tr>`; }).join('')}
+        return `<tr><td class="l">${esc(r.grupo)}</td><td class="gs">${r.n}</td><td>${r.con_p}</td><td>${r.liquidadas}</td><td class="gs">${pct(r.acierto)}</td><td>${pct(r.p_modelo)}</td><td>${pct(r.p_mercado)}</td><td class="gs">${num(r.brier_modelo, 3)}</td><td>${num(r.brier_mercado, 3)}</td><td class="${b === 'modelo' ? 'hit1' : ''}">${b}</td></tr>`; }).join('')}
       </tbody></table></div><p class="note">P modelo / P mercado = medias sobre las cuotas liquidadas que tienen ambas. Brier menor = mejor. Con pocas cuotas liquidadas, "Mejor" no concluye nada.</p></div>
     <div class="card"><div class="card-title">Calibración por decil de P</div>
       <div class="filters">Mercado: <select id="reg-g"><option>(todas)</option>${gr.map(r => `<option ${r.grupo === regGrupo ? 'selected' : ''}>${esc(r.grupo)}</option>`).join('')}</select></div>
       <div class="legend">${ser.map(x => `<span><i style="background:${x.c}"></i>${x.name}</span>`).join('')}<span><i class="dash"></i>calibración perfecta</span></div>
       ${dec.length ? calib01(ser) : '<div class="empty">Sin cuotas liquidadas en este mercado todavía.</div>'}
-      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="l">Decil</th><th>n (modelo)</th><th>P modelo</th><th>Acierto</th><th>n (mercado)</th><th>P mercado</th><th>Acierto</th></tr></thead><tbody>
+      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="l" rowspan="2">Decil de P</th><th colspan="3" class="grp gs">Según P del modelo</th><th colspan="3" class="grp gs">Según P del mercado</th></tr>
+      <tr><th class="gs">n</th><th>P media</th><th>Acierto</th><th class="gs">n</th><th>P media</th><th>Acierto</th></tr></thead><tbody>
       ${DEC.map(b => { const x = dec.find(d => d.decil === b && d.fuente_p === 'modelo'), k = dec.find(d => d.decil === b && d.fuente_p === 'mercado');
-        return x || k ? `<tr><td class="l">${b} %</td><td>${x?.n ?? '—'}</td><td>${pct(x?.p_media)}</td><td>${pct(x?.acierto)}</td><td>${k?.n ?? '—'}</td><td>${pct(k?.p_media)}</td><td>${pct(k?.acierto)}</td></tr>` : ''; }).join('')}</tbody></table></div></div>`;
+        return x || k ? `<tr><td class="l">${b} %</td><td class="gs">${x?.n ?? '—'}</td><td>${pct(x?.p_media)}</td><td>${pct(x?.acierto)}</td><td class="gs">${k?.n ?? '—'}</td><td>${pct(k?.p_media)}</td><td>${pct(k?.acierto)}</td></tr>` : ''; }).join('')}</tbody></table></div></div>`;
   $('#reg-g').onchange = e => { regGrupo = e.target.value; renderRegistro(); };
 }
 
@@ -511,9 +518,10 @@ function calibChart(series) {
 function bandRows(ss) { return BANDS.map(b => { const c = ss.filter(s => band(s.p) === b && s.hit != null); return c.length ? { tramo: b, n: c.length, p_media: mean(c.map(s => s.p)), acierto: mean(c.map(s => s.hit)) } : null; }).filter(Boolean); }
 function bandTable(rows, extra) {
   if (!rows.length) return '<div class="empty">Sin selecciones liquidadas.</div>';
-  return `<div class="tablewrap"><table><thead><tr><th class="l">Tramo</th><th>n</th><th>P media</th><th>Acierto</th><th>Dif.</th>${extra ? `<th>n ${extra} &gt; 0</th><th>Acierto ${extra} &gt; 0</th><th>n ${extra} ≤ 0</th><th>Acierto ${extra} ≤ 0</th><th>Separa</th>` : ''}</tr></thead><tbody>` +
+  return `<div class="tablewrap"><table><thead>${extra ? `<tr><th class="l" rowspan="2">Tramo</th><th colspan="4" class="grp gs">Todas</th><th colspan="2" class="grp gs">${extra} &gt; 0</th><th colspan="2" class="grp gs">${extra} ≤ 0</th><th rowspan="2" class="gs">Separa</th></tr>
+      <tr><th class="gs">n</th><th>P media</th><th>Acierto</th><th>Dif.</th><th class="gs">n</th><th>Acierto</th><th class="gs">n</th><th>Acierto</th></tr>` : '<tr><th class="l">Tramo</th><th>n</th><th>P media</th><th>Acierto</th><th>Dif.</th></tr>'}</thead><tbody>` +
     rows.map(r => { const sep = r.acierto_pos != null && r.acierto_neg != null ? r.acierto_pos - r.acierto_neg : null;
-      return `<tr><td class="l">${esc(r.tramo)}</td><td>${r.n}</td><td>${pct(r.p_media)}</td><td>${pct(r.acierto)}</td><td>${sgn(100 * (r.acierto - r.p_media))} pp</td>${extra ? `<td>${r.n_pos ?? '—'}</td><td>${pct(r.acierto_pos)}</td><td>${r.n_neg ?? '—'}</td><td>${pct(r.acierto_neg)}</td><td class="${r.n_pos >= 30 && r.n_neg >= 30 ? (sep > .05 ? 'hit1' : sep < -.05 ? 'hit0' : '') : 'muted'}" ${r.n_pos < 30 || r.n_neg < 30 ? 'data-tip="Algún grupo tiene n &lt; 30: no concluye"' : ''}>${sep == null ? '—' : sgn(100 * sep) + ' pp'}</td>` : ''}</tr>`; }).join('') + '</tbody></table></div>';
+      return `<tr><td class="l">${esc(r.tramo)}</td><td${extra ? ' class="gs"' : ''}>${r.n}</td><td>${pct(r.p_media)}</td><td>${pct(r.acierto)}</td><td>${sgn(100 * (r.acierto - r.p_media))} pp</td>${extra ? `<td class="gs">${r.n_pos ?? '—'}</td><td>${pct(r.acierto_pos)}</td><td class="gs">${r.n_neg ?? '—'}</td><td>${pct(r.acierto_neg)}</td><td class="gs ${r.n_pos >= 30 && r.n_neg >= 30 ? (sep > .05 ? 'hit1' : sep < -.05 ? 'hit0' : '') : 'muted'}" ${r.n_pos < 30 || r.n_neg < 30 ? 'data-tip="Algún grupo tiene n &lt; 30: no concluye"' : ''}>${sep == null ? '—' : sgn(100 * sep) + ' pp'}</td>` : ''}</tr>`; }).join('') + '</tbody></table></div>';
 }
 let calibMk = '';
 function renderCalibPub() {
@@ -529,14 +537,15 @@ function renderCalib() {
   const series = [{ name: 'Backtest 2024-26 (ganador)', c: 'var(--series-1)', rows: bt.calibracion?.tabla || [] },
     { name: 'Backtest 2026-27 (ganador)', c: 'var(--series-2)', rows: bt.prueba?.tabla || [] },
     { name: `Analizados · ${calibMk || 'todos los mercados'}`, c: 'var(--series-3)', rows: bandRows(ss) }];
-  const ll = k => bt[k] ? `<tr><td class="l">${k === 'calibracion' ? 'Calibración 2024-26' : 'Prueba 2026-27'}</td><td>${bt[k].n}</td><td>${num(bt[k].logloss.mercado, 4)}</td><td>${num(bt[k].logloss.modelo, 4)}</td><td>${num(bt[k].logloss.mezcla, 4)}</td><td>${num(bt[k].brier.mercado, 4)}</td><td>${num(bt[k].brier.modelo, 4)}</td><td>${num(bt[k].brier.mezcla, 4)}</td></tr>` : '';
+  const ll = k => bt[k] ? `<tr><td class="l">${k === 'calibracion' ? 'Calibración 2024-26' : 'Prueba 2026-27'}</td><td>${bt[k].n}</td><td class="gs">${num(bt[k].logloss.mercado, 4)}</td><td>${num(bt[k].logloss.modelo, 4)}</td><td>${num(bt[k].logloss.mezcla, 4)}</td><td class="gs">${num(bt[k].brier.mercado, 4)}</td><td>${num(bt[k].brier.modelo, 4)}</td><td>${num(bt[k].brier.mezcla, 4)}</td></tr>` : '';
   $('#t-calib').innerHTML = `<div class="card"><div class="card-title">P% prometida vs acierto real</div>
     <div class="filters">Serie verde: <select id="cal-mk"><option value="">Todos los mercados</option>${MERCADOS.map(x => `<option ${x === calibMk ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
     <div class="legend">${series.map(s => `<span><i style="background:${s.c}"></i>${esc(s.name)}</span>`).join('')}<span><i class="dash"></i>calibración perfecta</span></div>
     ${calibChart(series)}<p class="note">Si la P% es honesta, los puntos caen sobre la diagonal: el tramo 70-75 % acierta ~72 %. El tamaño del punto crece con n.</p></div>
     <div class="grid2"><div class="card"><div class="card-title">Tabla — ${esc(series[2].name)}</div>${bandTable(bandRows(ss))}</div>
     <div class="card"><div class="card-title">Ganador: mercado vs modelo vs mezcla (log-loss y Brier, menor = mejor)</div>
-      <div class="tablewrap"><table><thead><tr><th class="l">Muestra</th><th>n</th><th>LL mercado</th><th>LL modelo</th><th>LL mezcla</th><th>Brier mercado</th><th>Brier modelo</th><th>Brier mezcla</th></tr></thead><tbody>${ll('calibracion')}${ll('prueba')}</tbody></table></div>
+      <div class="tablewrap"><table><thead><tr><th class="l" rowspan="2">Muestra</th><th rowspan="2">n</th><th colspan="3" class="grp gs">Log-loss <span class="muted">· menor = mejor</span></th><th colspan="3" class="grp gs">Brier <span class="muted">· menor = mejor</span></th></tr>
+      <tr><th class="gs">Mercado</th><th>Modelo</th><th>Mezcla</th><th class="gs">Mercado</th><th>Modelo</th><th>Mezcla</th></tr></thead><tbody>${ll('calibracion')}${ll('prueba')}</tbody></table></div>
       <p class="note">Hoy el cierre del mercado sigue siendo la referencia más difícil de batir; el modelo propio aporta poco y se mezcla con peso ${num(1 - (m.w_mercado ?? .8), 2)}.</p></div></div>`;
   $('#cal-mk').onchange = e => { calibMk = e.target.value; renderCalib(); };
 }
@@ -584,8 +593,9 @@ function renderCLV() {
 // ---------- DESCANSO Y BAJAS
 function renderCrit() {
   const k = D.criticas || {};
-  const tbl = rows => `<div class="tablewrap"><table><thead><tr><th class="l">Grupo</th><th>n</th><th>Gana local</th><th>P mercado</th><th>Diferencia</th><th>Cubre local</th><th>Residuo vs línea</th></tr></thead><tbody>` +
-    rows.map(r => `<tr><td class="l">${esc(r.grupo)}</td><td>${r.n}</td><td>${pct(r.gana_local)}</td><td>${pct(r.p_mercado)}</td><td>${sgn(100 * (r.gana_local - r.p_mercado))} pp</td><td>${pct(r.cubre_local)}</td><td>${sgn(r.resid_vs_linea)} pts</td></tr>`).join('') + '</tbody></table></div>';
+  const tbl = rows => `<div class="tablewrap"><table><thead><tr><th class="l" rowspan="2">Grupo</th><th rowspan="2">n</th><th colspan="3" class="grp gs">Ganador</th><th colspan="2" class="grp gs">Hándicap</th></tr>
+      <tr><th class="gs">Gana local</th><th>P mercado</th><th>Diferencia</th><th class="gs">Cubre local</th><th>Residuo vs línea</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="l">${esc(r.grupo)}</td><td>${r.n}</td><td class="gs">${pct(r.gana_local)}</td><td>${pct(r.p_mercado)}</td><td>${sgn(100 * (r.gana_local - r.p_mercado))} pp</td><td class="gs">${pct(r.cubre_local)}</td><td>${sgn(r.resid_vs_linea)} pts</td></tr>`).join('') + '</tbody></table></div>';
   const block = (t, rows) => `<div class="card"><div class="card-title">${t}</div><div class="grid2"><div>${divBars(rows, r => r.grupo, r => r.resid_vs_linea, v => sgn(v) + ' pts',
     r => `<b>${esc(r.grupo)}</b> (n = ${r.n})<br>gana local ${pct(r.gana_local)} vs mercado ${pct(r.p_mercado)}<br>cubre ${pct(r.cubre_local)} · residuo ${sgn(r.resid_vs_linea)} pts`, 'pts', 3)}</div><div>${tbl(rows)}</div></div></div>`;
   $('#t-crit').innerHTML = `<p class="note" style="margin-bottom:12px">¿El mercado ya incorpora el descanso y las bajas? Residuo vs línea = margen local + hándicap de cierre (positivo: el local rindió más de lo que decía la línea).
@@ -661,9 +671,9 @@ function hipTotal(rows) {
 }
 function hipTot(o, q) {       // oficial + retroactivo
   const nl = o.liquidadas + q.liquidadas, pl = o.pl + q.pl;
-  if (!nl) return '<td>' + (o.unidades + q.unidades) + '</td><td>—</td><td>—</td><td>—</td>';
+  if (!nl) return '<td class="gs">' + (o.unidades + q.unidades) + '</td><td>—</td><td>—</td><td>—</td>';
   const ac = ((o.acierto || 0) * o.liquidadas + (q.acierto || 0) * q.liquidadas) / nl, cls = pl > 0 ? 'hit1' : pl < 0 ? 'hit0' : '';
-  return `<td>${o.unidades + q.unidades}</td><td>${pct(ac)}</td><td class="${cls}">${sgn(100 * pl / nl)}%</td><td class="${cls}">${sgn(pl, 1)}u</td>`;
+  return `<td class="gs">${o.unidades + q.unidades}</td><td>${pct(ac)}</td><td class="${cls}">${sgn(100 * pl / nl)}%</td><td class="${cls}">${sgn(pl, 1)}u</td>`;
 }
 function renderHip() {
   const H = D.hipotesis || {}, R = H.resumen || [], el = $('#t-hip');
@@ -672,23 +682,23 @@ function renderHip() {
   const desde = (hs && hs.desde) || desde0;     // S5-Más / S5-Menos cuentan desde su propia fecha
   const match = x => !hipSel || x.hid === hipSel || (hs && hs.de && x.hid === hs.de && x.side === hs.side);
   const rows = all.filter(x => match(x) && (!hipOficial || x.fecha >= desde));
-  const cell = o => `<td>${o.unidades}</td><td>${pct(o.acierto)}</td><td>${num(o.cuota, 2)}</td>
+  const cell = o => `<td class="gs">${o.unidades}</td><td>${pct(o.acierto)}</td><td>${num(o.cuota, 2)}</td>
     <td class="${o.roi == null ? '' : o.roi > 0 ? 'hit1' : 'hit0'}">${o.roi == null ? '—' : sgn(100 * o.roi) + '%'}</td><td>${o.liquidadas ? sgn(o.pl, 1) + 'u' : '—'}</td>
     <td class="muted">${o.t == null ? '—' : num(o.t, 1)}</td><td class="muted">${o.clv_dk == null ? '—' : sgn(100 * o.clv_dk) + '% (' + o.n_clv_dk + ')'}</td>`;
   el.innerHTML = `<p class="note" style="margin-bottom:12px">Reglas de <b>estudio</b> (sin dinero), fijadas el <b>${esc(desde0)}</b> (las agregadas después cuentan desde su propia fecha). Solo cuentan las selecciones desde esa fecha;
     las anteriores son <b>retroactivas</b>: las hipótesis salieron de esos partidos y no prueban nada. Cuota = Betano en la foto registrada.
     t agrupa por partido (o jugador-partido). CLV vs DK = cuota tomada × P justa del cierre de DraftKings − 1.${PUB ? '' : ' Detalle y origen: data/backtest/RENTABILIDAD.md.'}</p>
     <div class="card"><div class="card-title">Estado de las hipótesis</div><div class="tablewrap"><table><thead>
-      <tr><th class="l" rowspan="2">Hipótesis</th><th class="l" rowspan="2">Estado</th><th rowspan="2">Progreso</th><th colspan="7">Desde ${esc(desde0)} o su fecha (cuenta)</th><th colspan="4">Retroactivo</th><th colspan="4">Total</th></tr>
-      <tr><th>n</th><th>Acierto</th><th>Cuota</th><th>ROI</th><th>P&L</th><th>t</th><th>CLV vs DK</th><th>n</th><th>Acierto</th><th>ROI</th><th>P&L</th><th>n</th><th>Acierto</th><th>ROI</th><th>P&L</th></tr></thead><tbody>
+      <tr><th class="l" rowspan="2">Hipótesis</th><th class="l" rowspan="2">Estado</th><th rowspan="2">Progreso</th><th colspan="7" class="grp gs">Oficial <span class="muted">· cuenta desde ${esc(desde0)} o su fecha</span></th><th colspan="4" class="grp gs">Retroactivo <span class="muted">· no cuenta</span></th><th colspan="4" class="grp gs">Total <span class="muted">· oficial + retro</span></th></tr>
+      <tr><th class="gs">n</th><th>Acierto</th><th>Cuota</th><th>ROI</th><th>P&L</th><th>t</th><th>CLV vs DK</th><th class="gs">n</th><th>Acierto</th><th>ROI</th><th>P&L</th><th class="gs">n</th><th>Acierto</th><th>ROI</th><th>P&L</th></tr></thead><tbody>
     ${R.map(r => { const o = r.oficial, q = r.retro, e = ESTADO[r.estado] || ['nt', r.estado], pr = Math.min(1, o.unidades / r.n_objetivo);
       return `<tr><td class="l"><b>${esc(r.id)}</b> ${esc(r.nombre)}${r.desde && r.desde !== desde0 ? ` <span class="muted">· desde ${esc(r.desde)}</span>` : ''}</td><td class="l"><span class="badge ${e[0]}">${e[1]}</span></td>
         <td data-tip="${o.unidades} de ${r.n_objetivo} ${esc(r.unidad)}"><div style="display:flex;align-items:center;gap:6px;justify-content:flex-end"><div style="width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden"><div style="width:${(100 * pr).toFixed(0)}%;height:100%;background:var(--series-1)"></div></div><span class="muted">${o.unidades}/${r.n_objetivo}</span></div></td>
-        ${cell(o)}<td class="muted">${q.unidades}</td><td class="muted">${pct(q.acierto)}</td><td class="muted">${q.roi == null ? '—' : sgn(100 * q.roi) + '%'}</td><td class="muted">${q.liquidadas ? sgn(q.pl, 1) + 'u' : '—'}</td>${hipTot(o, q)}</tr>`; }).join('')}
+        ${cell(o)}<td class="muted gs">${q.unidades}</td><td class="muted">${pct(q.acierto)}</td><td class="muted">${q.roi == null ? '—' : sgn(100 * q.roi) + '%'}</td><td class="muted">${q.liquidadas ? sgn(q.pl, 1) + 'u' : '—'}</td>${hipTot(o, q)}</tr>`; }).join('')}
     </tbody></table></div>
     <p class="note">Estado: "acumulando" hasta llegar al objetivo; después "pasa" si ROI &gt; 0 con t &gt; 2 (S1: CLV &gt; 0 y acierto ≥ 52.6 %). Cambiar un umbral reinicia la prueba.</p></div>
     <div class="card"><div class="card-title">Reglas fijadas</div><div class="tablewrap"><table><thead><tr><th class="l">Hipótesis</th><th class="l">Regla</th><th class="l">De dónde sale</th><th class="l">Criterio para darla por probada</th></tr></thead><tbody>
-      ${R.map(r => `<tr><td class="l"><b>${esc(r.id)}</b></td><td class="l">${esc(r.regla)}</td><td class="l muted">${esc(r.base)}</td><td class="l">${esc(r.criterio)}</td></tr>`).join('')}</tbody></table></div></div>
+      ${R.map(r => `<tr><td class="l"><b>${esc(r.id)}</b></td><td class="l wrap" style="min-width:260px">${esc(r.regla)}</td><td class="l muted wrap" style="min-width:260px">${esc(r.base)}</td><td class="l wrap" style="min-width:180px">${esc(r.criterio)}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="card"><div class="card-title">P&L acumulado (1u por selección, cuota Betano)${hipSel ? ' — ' + esc(hipSel) : ' — todas'}</div>${hipCurve(rows, desde)}</div>
     <div class="card"><div class="card-title">Selecciones</div>
       <div class="filters">Hipótesis: <select id="hp-sel"><option value="">Todas</option>${R.map(r => `<option value="${esc(r.id)}" ${r.id === hipSel ? 'selected' : ''}>${esc(r.id)} ${esc(r.nombre)}</option>`).join('')}</select>
