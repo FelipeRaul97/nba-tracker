@@ -644,6 +644,12 @@ function hipTotal(rows) {
     <td class="l">${h}/${n} aciertos${n ? ' (' + pct(h / n) + ')' : ''}</td><td class="l"></td><td>${num(cuota, 2)}</td><td>${pct(pm)}</td><td>${clv == null ? '—' : sgn(100 * clv) + '%'}</td>
     <td class="${cls(pl)}">ROI ${n ? sgn(100 * pl / n) + '%' : '—'}</td><td class="${cls(pl)}">${sgn(pl, 2)}u</td></tr></tfoot>`;
 }
+function hipTot(o, q) {       // oficial + retroactivo
+  const nl = o.liquidadas + q.liquidadas, pl = o.pl + q.pl;
+  if (!nl) return '<td>' + (o.unidades + q.unidades) + '</td><td>—</td><td>—</td><td>—</td>';
+  const ac = ((o.acierto || 0) * o.liquidadas + (q.acierto || 0) * q.liquidadas) / nl, cls = pl > 0 ? 'hit1' : pl < 0 ? 'hit0' : '';
+  return `<td>${o.unidades + q.unidades}</td><td>${pct(ac)}</td><td class="${cls}">${sgn(100 * pl / nl)}%</td><td class="${cls}">${sgn(pl, 1)}u</td>`;
+}
 function renderHip() {
   const H = D.hipotesis || {}, R = H.resumen || [], el = $('#t-hip');
   if (!R.length) { el.innerHTML = '<div class="empty">Sin hipótesis: correr tracker_export.py.</div>'; return; }
@@ -658,12 +664,12 @@ function renderHip() {
     las anteriores son <b>retroactivas</b>: las hipótesis salieron de esos partidos y no prueban nada. Cuota = Betano en la foto registrada.
     t agrupa por partido (o jugador-partido). CLV vs DK = cuota tomada × P justa del cierre de DraftKings − 1.${PUB ? '' : ' Detalle y origen: data/backtest/RENTABILIDAD.md.'}</p>
     <div class="card"><div class="card-title">Estado de las hipótesis</div><div class="tablewrap"><table><thead>
-      <tr><th class="l" rowspan="2">Hipótesis</th><th class="l" rowspan="2">Estado</th><th rowspan="2">Progreso</th><th colspan="7">Desde ${esc(desde0)} o su fecha (cuenta)</th><th colspan="3">Retroactivo</th></tr>
-      <tr><th>n</th><th>Acierto</th><th>Cuota</th><th>ROI</th><th>P&L</th><th>t</th><th>CLV vs DK</th><th>n</th><th>Acierto</th><th>ROI</th></tr></thead><tbody>
+      <tr><th class="l" rowspan="2">Hipótesis</th><th class="l" rowspan="2">Estado</th><th rowspan="2">Progreso</th><th colspan="7">Desde ${esc(desde0)} o su fecha (cuenta)</th><th colspan="4">Retroactivo</th><th colspan="4">Total</th></tr>
+      <tr><th>n</th><th>Acierto</th><th>Cuota</th><th>ROI</th><th>P&L</th><th>t</th><th>CLV vs DK</th><th>n</th><th>Acierto</th><th>ROI</th><th>P&L</th><th>n</th><th>Acierto</th><th>ROI</th><th>P&L</th></tr></thead><tbody>
     ${R.map(r => { const o = r.oficial, q = r.retro, e = ESTADO[r.estado] || ['nt', r.estado], pr = Math.min(1, o.unidades / r.n_objetivo);
       return `<tr><td class="l"><b>${esc(r.id)}</b> ${esc(r.nombre)}${r.desde && r.desde !== desde0 ? ` <span class="muted">· desde ${esc(r.desde)}</span>` : ''}</td><td class="l"><span class="badge ${e[0]}">${e[1]}</span></td>
         <td data-tip="${o.unidades} de ${r.n_objetivo} ${esc(r.unidad)}"><div style="display:flex;align-items:center;gap:6px;justify-content:flex-end"><div style="width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden"><div style="width:${(100 * pr).toFixed(0)}%;height:100%;background:var(--series-1)"></div></div><span class="muted">${o.unidades}/${r.n_objetivo}</span></div></td>
-        ${cell(o)}<td class="muted">${q.unidades}</td><td class="muted">${pct(q.acierto)}</td><td class="muted">${q.roi == null ? '—' : sgn(100 * q.roi) + '%'}</td></tr>`; }).join('')}
+        ${cell(o)}<td class="muted">${q.unidades}</td><td class="muted">${pct(q.acierto)}</td><td class="muted">${q.roi == null ? '—' : sgn(100 * q.roi) + '%'}</td><td class="muted">${q.liquidadas ? sgn(q.pl, 1) + 'u' : '—'}</td>${hipTot(o, q)}</tr>`; }).join('')}
     </tbody></table></div>
     <p class="note">Estado: "acumulando" hasta llegar al objetivo; después "pasa" si ROI &gt; 0 con t &gt; 2 (S1: CLV &gt; 0 y acierto ≥ 52.6 %). Cambiar un umbral reinicia la prueba.</p></div>
     <div class="card"><div class="card-title">Reglas fijadas</div><div class="tablewrap"><table><thead><tr><th class="l">Hipótesis</th><th class="l">Regla</th><th class="l">De dónde sale</th><th class="l">Criterio para darla por probada</th></tr></thead><tbody>
