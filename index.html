@@ -641,7 +641,7 @@ function hipTotal(rows) {
   const cuota = avg(liq, x => x.price), pm = avg(liq, x => x.p_model), clv = avg(liq, x => x.clv_dk);
   const cls = v => v > 0 ? 'hit1' : v < 0 ? 'hit0' : '';
   return `<tfoot><tr><td class="l">TOTAL</td><td class="l">${rows.length} selecciones · ${n} liquidadas</td><td class="l"></td><td class="l">${esc(hipSel || 'todas')}</td>
-    <td class="l">${h}/${n} aciertos${n ? ' (' + pct(h / n) + ')' : ''}</td><td>${num(cuota, 2)}</td><td>${pct(pm)}</td><td>${clv == null ? '—' : sgn(100 * clv) + '%'}</td>
+    <td class="l">${h}/${n} aciertos${n ? ' (' + pct(h / n) + ')' : ''}</td><td class="l"></td><td>${num(cuota, 2)}</td><td>${pct(pm)}</td><td>${clv == null ? '—' : sgn(100 * clv) + '%'}</td>
     <td class="${cls(pl)}">ROI ${n ? sgn(100 * pl / n) + '%' : '—'}</td><td class="${cls(pl)}">${sgn(pl, 2)}u</td></tr></tfoot>`;
 }
 function renderHip() {
@@ -670,10 +670,10 @@ function renderHip() {
     <div class="card"><div class="card-title">Selecciones</div>
       <div class="filters">Hipótesis: <select id="hp-sel"><option value="">Todas</option>${R.map(r => `<option value="${esc(r.id)}" ${r.id === hipSel ? 'selected' : ''}>${esc(r.id)} ${esc(r.nombre)}</option>`).join('')}</select>
         <label><input type="checkbox" id="hp-of" ${hipOficial ? 'checked' : ''}> solo desde ${esc(desde)}</label><span class="count">${rows.length} selecciones</span></div>
-      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Hip.</th><th class="l">Selección</th><th>Cuota</th><th>P modelo</th><th>CLV vs DK</th><th>Resultado</th><th>P&L</th></tr></thead><tbody>
-      ${rows.slice(0, 600).map(x => `<tr class="${x.fecha < desde ? 'muted' : ''}"><td class="l">${esc(x.fecha)}${x.fecha < desde ? ' <span class="badge nt">retro</span>' : ''}</td><td class="l">${esc(x.partido)}</td><td class="l">${esc(x.final || '')}</td><td class="l">${esc(x.hid)}</td><td class="l">${esc(x.seleccion)}</td>
+      <div class="tablewrap scroll"><table><thead><tr><th class="l">Fecha</th><th class="l">Partido</th><th class="l">Final</th><th class="l">Hip.</th><th class="l">Selección</th><th class="l">Real</th><th>Cuota</th><th>P modelo</th><th>CLV vs DK</th><th>Resultado</th><th>P&L</th></tr></thead><tbody>
+      ${rows.slice(0, 600).map(x => `<tr class="${x.fecha < desde ? 'muted' : ''}"><td class="l">${esc(x.fecha)}${x.fecha < desde ? ' <span class="badge nt">retro</span>' : ''}</td><td class="l">${esc(x.partido)}</td><td class="l">${esc(x.final || '')}</td><td class="l">${esc(x.hid)}</td><td class="l">${esc(x.seleccion)}</td><td class="l">${x.real == null ? '—' : esc(x.real)}</td>
         <td>${num(x.price, 2)}</td><td>${pct(x.p_model)}</td><td>${x.clv_dk == null ? '—' : sgn(100 * x.clv_dk) + '%'}</td>
-        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td><td>${x.hit == null ? '—' : sgn(hipPL(x), 2)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Sin selecciones.</td></tr>'}</tbody>${hipTotal(rows)}</table></div></div>`;
+        <td>${x.hit === 1 ? '<span class="badge ok">✓</span>' : x.hit === 0 ? '<span class="badge ko">✗</span>' : '<span class="badge pd">pendiente</span>'}</td><td>${x.hit == null ? '—' : sgn(hipPL(x), 2)}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">Sin selecciones.</td></tr>'}</tbody>${hipTotal(rows)}</table></div></div>`;
   $('#hp-sel').onchange = e => { hipSel = e.target.value; renderHip(); };
   $('#hp-of').onchange = e => { hipOficial = e.target.checked; renderHip(); };
 }
